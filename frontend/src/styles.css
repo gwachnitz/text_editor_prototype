@@ -1,0 +1,44 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.editor-shell {
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.editor-header {
+  margin-bottom: 1rem;
+}
+
+.editor-body {
+  display: grid;
+  grid-template-columns: 220px 1fr 220px;
+  gap: 1rem;
+}
+
+.panel {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.editor-textarea {
+  width: 100%;
+  min-height: 300px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.5rem;
+  resize: vertical;
+}
