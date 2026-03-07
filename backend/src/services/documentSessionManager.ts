@@ -43,6 +43,8 @@ export class DocumentSessionManager {
           return;
         }
 
+        this.prunePresenceAndBroadcastLeaves(message.documentId);
+
         const priorSession = this.socketToSession.get(socket);
         if (priorSession) {
           this.leaveSession(socket, priorSession);
@@ -107,6 +109,8 @@ export class DocumentSessionManager {
           return;
         }
 
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
+
         if (message.endOrderKeyExclusive < message.startOrderKeyInclusive) {
           this.send(socket, {
             type: "error",
@@ -142,6 +146,8 @@ export class DocumentSessionManager {
         if (!session) {
           return;
         }
+
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
 
         const currentBlock = this.deps.blockStore.getBlock(session.documentId, message.operation.blockId);
         if (!currentBlock) {
@@ -249,6 +255,8 @@ export class DocumentSessionManager {
           return;
         }
 
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
+
         this.deps.presenceService.update(session.documentId, session.clientId, message.presence);
         const latestSession = this.deps.presenceService
           .list(session.documentId)
@@ -274,6 +282,8 @@ export class DocumentSessionManager {
           return;
         }
 
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
+
         this.deps.presenceService.heartbeat(session.documentId, session.clientId);
         return;
       }
@@ -283,6 +293,8 @@ export class DocumentSessionManager {
         if (!session) {
           return;
         }
+
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
 
         this.send(socket, {
           type: "resync_required",
@@ -349,6 +361,18 @@ export class DocumentSessionManager {
       clientId: session.clientId,
       change: "left"
     });
+  }
+
+  private prunePresenceAndBroadcastLeaves(documentId: string): void {
+    const expired = this.deps.presenceService.pruneExpired(documentId);
+    for (const session of expired) {
+      this.broadcastToDocument(documentId, {
+        type: "presence_diff",
+        documentId,
+        clientId: session.clientId,
+        change: "left"
+      });
+    }
   }
 
   private getSequencing(documentId: string): { latestSequence: number; latestSnapshotVersion: number } {

@@ -51,4 +51,8 @@ export class SnapshotService {
 
     return undefined;
   }
+
+  list(documentId: string): Snapshot[] {
+    return [...(this.snapshotsByDoc.get(documentId) ?? [])];
+  }
 }

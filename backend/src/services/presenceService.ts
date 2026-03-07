@@ -34,12 +34,18 @@ export class PresenceService {
   }
 
   heartbeat(documentId: string, clientId: string): void {
-    const session = this.presenceByDoc.get(documentId)?.get(clientId);
-    if (!session) {
-      return;
-    }
+    const docPresence = this.presenceByDoc.get(documentId) ?? new Map<string, PresenceSession>();
+    const now = Date.now();
+    const session = docPresence.get(clientId) ?? {
+      clientId,
+      displayName: "Anonymous",
+      documentId,
+      lastHeartbeatAt: now
+    };
 
-    session.lastHeartbeatAt = Date.now();
+    session.lastHeartbeatAt = now;
+    docPresence.set(clientId, session);
+    this.presenceByDoc.set(documentId, docPresence);
   }
 
   update(documentId: string, clientId: string, presence: PresenceState): void {
@@ -72,15 +78,17 @@ export class PresenceService {
     return [...(this.presenceByDoc.get(documentId)?.values() ?? [])];
   }
 
-  pruneExpired(documentId: string): void {
+  pruneExpired(documentId: string): PresenceSession[] {
     const sessions = this.presenceByDoc.get(documentId);
     if (!sessions) {
-      return;
+      return [];
     }
 
     const cutoff = Date.now() - this.ttlMs;
+    const expired: PresenceSession[] = [];
     for (const [clientId, session] of sessions.entries()) {
       if (session.lastHeartbeatAt < cutoff) {
+        expired.push(session);
         sessions.delete(clientId);
       }
     }
@@ -88,5 +96,7 @@ export class PresenceService {
     if (sessions.size === 0) {
       this.presenceByDoc.delete(documentId);
     }
+
+    return expired;
   }
 }

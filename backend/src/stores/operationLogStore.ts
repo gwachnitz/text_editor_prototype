@@ -29,4 +29,14 @@ export class OperationLogStore {
   list(documentId: string): Operation[] {
     return [...(this.operationsByDoc.get(documentId) ?? [])];
   }
+
+  listRecent(documentId: string, limit: number): Operation[] {
+    const normalizedLimit = Number.isFinite(limit) ? Math.floor(limit) : 0;
+    if (normalizedLimit <= 0) {
+      return [];
+    }
+
+    const operations = this.operationsByDoc.get(documentId) ?? [];
+    return operations.slice(Math.max(operations.length - normalizedLimit, 0));
+  }
 }
