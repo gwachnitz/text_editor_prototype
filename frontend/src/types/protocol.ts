@@ -1,3 +1,20 @@
+export type Document = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  latestSnapshotVersion: number;
+};
+
+export type Block = {
+  id: string;
+  documentId: string;
+  orderKey: number;
+  text: string;
+  version: number;
+  updatedAt: number;
+};
+
 export type OperationPayload =
   | { type: "insert_text"; offset: number; text: string }
   | { type: "delete_text"; offset: number; length: number }
@@ -10,11 +27,28 @@ export type SubmittedOperation = {
   payload: OperationPayload;
 };
 
+export type PresenceSession = {
+  clientId: string;
+  displayName: string;
+  documentId: string;
+  activeBlockId?: string;
+  cursor?: {
+    blockId?: string;
+    offset?: number;
+  };
+  lastHeartbeatAt: number;
+};
+
 export type PresenceState = {
   displayName?: string;
   activeBlockId?: string;
   cursorBlockId?: string;
   cursorOffset?: number;
+};
+
+export type SequencingMetadata = {
+  latestSequence: number;
+  latestSnapshotVersion: number;
 };
 
 export type ClientToServerMessage =
@@ -56,75 +90,79 @@ export type ServerToClientMessage =
   | {
       type: "document_joined";
       documentId: string;
-      sequencing: {
-        latestSequence: number;
-        latestSnapshotVersion: number;
-      };
+      document: Document;
       initialRange: {
         startOrderKeyInclusive: number;
         endOrderKeyExclusive: number;
       };
-      document: {
-        id: string;
-        title: string;
-      };
+      presenceState: PresenceSession[];
+      sequencing: SequencingMetadata;
     }
   | {
       type: "range_data";
       documentId: string;
       startOrderKeyInclusive: number;
       endOrderKeyExclusive: number;
-      blocks: Array<{
-        id: string;
-        documentId: string;
-        orderKey: number;
-        text: string;
-        version: number;
-      }>;
+      blocks: Block[];
     }
   | {
       type: "block_updated";
       documentId: string;
       sequence: number;
-      clientId: string;
-      block: {
-        id: string;
-        documentId: string;
-        orderKey: number;
-        text: string;
-        version: number;
-      };
+      block: Block;
       operation: SubmittedOperation;
+      clientId: string;
     }
   | {
-      type: "edit_accepted" | "edit_rebased" | "edit_rejected";
+      type: "edit_accepted";
       documentId: string;
       operationId: string;
-      reason?: string;
-      sequence?: number;
-      appliedBlockVersion?: number;
-      baseBlockVersion?: number;
-      serverBlockVersionAtApply?: number;
+      sequence: number;
+      appliedBlockVersion: number;
     }
   | {
-      type: "presence_state" | "presence_diff";
+      type: "edit_rebased";
       documentId: string;
-      clientId?: string;
-      change?: "joined" | "updated" | "left";
+      operationId: string;
+      sequence: number;
+      baseBlockVersion: number;
+      serverBlockVersionAtApply: number;
+      appliedBlockVersion: number;
+    }
+  | {
+      type: "edit_rejected";
+      documentId: string;
+      operationId: string;
+      reason: string;
+    }
+  | {
+      type: "presence_state";
+      documentId: string;
+      sessions: PresenceSession[];
+    }
+  | {
+      type: "presence_diff";
+      documentId: string;
+      clientId: string;
+      change: "joined" | "updated" | "left";
+      session?: PresenceSession;
     }
   | {
       type: "snapshot_created";
       documentId: string;
-      snapshot: { id: string; upToSequence: number };
+      snapshot: {
+        id: string;
+        documentId: string;
+        createdAt: number;
+        upToSequence: number;
+        serializedBlockState: string;
+      };
     }
   | {
       type: "resync_required";
       documentId: string;
       reason: string;
-      sequencing: {
-        latestSequence: number;
-        latestSnapshotVersion: number;
-      };
+      sequencing: SequencingMetadata;
     }
   | {
       type: "error";

@@ -11,14 +11,27 @@ export function createWebSocketServer(
 
   wss.on("connection", (socket) => {
     socket.on("message", (raw) => {
+      let parsed: ClientToServerMessage;
+
       try {
-        const parsed = JSON.parse(raw.toString()) as ClientToServerMessage;
-        sessionManager.handleClientMessage(socket, parsed);
+        parsed = JSON.parse(raw.toString()) as ClientToServerMessage;
       } catch {
         socket.send(
           JSON.stringify({
             type: "error",
             message: "Invalid message payload"
+          })
+        );
+        return;
+      }
+
+      try {
+        sessionManager.handleClientMessage(socket, parsed);
+      } catch {
+        socket.send(
+          JSON.stringify({
+            type: "error",
+            message: "Failed to process message"
           })
         );
       }
