@@ -12,53 +12,97 @@ type Dependencies = {
   presenceService: PresenceService;
 };
 
+type SessionInfo = {
+  documentId: string;
+  clientId: string;
+};
+
 export class DocumentSessionManager {
-  private readonly socketToDocId = new Map<WebSocket, string>();
+  private readonly socketToSession = new Map<WebSocket, SessionInfo>();
 
   constructor(private readonly deps: Dependencies) {}
 
   handleClientMessage(socket: WebSocket, message: ClientToServerMessage): void {
     switch (message.type) {
       case "join_document": {
-        this.socketToDocId.set(socket, message.documentId);
-        this.deps.presenceService.join(message.documentId, message.clientId);
+        const session: SessionInfo = {
+          documentId: message.documentId,
+          clientId: message.clientId
+        };
+
+        this.socketToSession.set(socket, session);
+        this.deps.presenceService.join(session.documentId, session.clientId);
 
         this.send(socket, {
           type: "document_joined",
-          documentId: message.documentId,
-          serverRevision: this.deps.operationLogStore.getLatestSequence(message.documentId)
+          documentId: session.documentId,
+          serverRevision: this.deps.operationLogStore.getLatestSequence(session.documentId)
         });
         return;
       }
 
       case "submit_operation": {
-        const sequence = this.deps.operationLogStore.append(message.documentId, message.operation);
-        this.deps.snapshotService.maybeCreateSnapshot(message.documentId, sequence);
+        const session = this.socketToSession.get(socket);
+        if (!session) {
+          this.send(socket, {
+            type: "error",
+            message: "Join a document before submitting operations"
+          });
+          return;
+        }
+
+        if (message.documentId !== session.documentId) {
+          this.send(socket, {
+            type: "error",
+            message: "submit_operation documentId does not match joined session"
+          });
+          return;
+        }
+
+        const sequence = this.deps.operationLogStore.append(session.documentId, message.operation);
+        this.deps.snapshotService.maybeCreateSnapshot(session.documentId, sequence);
 
         this.send(socket, {
           type: "operation_acked",
-          documentId: message.documentId,
+          documentId: session.documentId,
           sequence
         });
         return;
       }
 
       case "presence_update": {
-        this.deps.presenceService.update(message.documentId, message.clientId, message.presence);
+        const session = this.socketToSession.get(socket);
+        if (!session) {
+          this.send(socket, {
+            type: "error",
+            message: "Join a document before sending presence updates"
+          });
+          return;
+        }
+
+        if (message.documentId !== session.documentId || message.clientId !== session.clientId) {
+          this.send(socket, {
+            type: "error",
+            message: "presence_update target does not match joined session"
+          });
+          return;
+        }
+
+        this.deps.presenceService.update(session.documentId, session.clientId, message.presence);
 
         this.send(socket, {
           type: "presence_acked",
-          documentId: message.documentId,
-          clientId: message.clientId
+          documentId: session.documentId,
+          clientId: session.clientId
         });
       }
     }
   }
 
   handleClientDisconnect(socket: WebSocket): void {
-    const docId = this.socketToDocId.get(socket);
-    if (docId) {
-      this.socketToDocId.delete(socket);
+    const session = this.socketToSession.get(socket);
+    if (session) {
+      this.socketToSession.delete(socket);
     }
   }
 
