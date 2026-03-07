@@ -55,10 +55,12 @@ export class PresenceService {
 
     existing.displayName = presence.displayName ?? existing.displayName;
     existing.activeBlockId = presence.activeBlockId ?? presence.cursorBlockId ?? existing.activeBlockId;
-    existing.cursor = {
-      blockId: presence.cursorBlockId,
-      offset: presence.cursorOffset
-    };
+    if (presence.cursorBlockId !== undefined || presence.cursorOffset !== undefined) {
+      existing.cursor = {
+        blockId: presence.cursorBlockId ?? existing.cursor?.blockId,
+        offset: presence.cursorOffset ?? existing.cursor?.offset
+      };
+    }
     existing.lastHeartbeatAt = now;
 
     docPresence.set(clientId, existing);
