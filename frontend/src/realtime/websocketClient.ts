@@ -9,7 +9,14 @@ export class RealtimeClient {
     this.socket = new WebSocket(this.url);
 
     this.socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data) as ServerToClientMessage;
+      let message: ServerToClientMessage;
+      try {
+        message = JSON.parse(event.data) as ServerToClientMessage;
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[ws] failed to parse message", error, event.data);
+        return;
+      }
       // eslint-disable-next-line no-console
       console.log("[ws] message", message);
     });
