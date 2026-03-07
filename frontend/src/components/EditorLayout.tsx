@@ -1,33 +1,102 @@
+import type { Block, PresenceSession, SequencingMetadata } from "../types/protocol";
+import type { ConnectionStatus } from "../realtime/websocketClient";
+
 type Props = {
   documentId: string;
+  documentTitle: string;
+  connectionStatus: ConnectionStatus;
+  clientId: string;
+  collaborators: PresenceSession[];
+  blocks: Block[];
+  sequencing: SequencingMetadata;
+  recentEvents: string[];
+  onBlockChange: (block: Block, text: string) => void;
+  onBlockCommit: (block: Block, text: string) => void;
+  onActiveBlockChange: (blockId?: string) => void;
+  onRequestResync: () => void;
 };
 
-export function EditorLayout({ documentId }: Props): JSX.Element {
+export function EditorLayout({
+  documentId,
+  documentTitle,
+  connectionStatus,
+  clientId,
+  collaborators,
+  blocks,
+  sequencing,
+  recentEvents,
+  onBlockChange,
+  onBlockCommit,
+  onActiveBlockChange,
+  onRequestResync
+}: Props): JSX.Element {
   return (
     <main className="editor-shell">
-      <header className="editor-header">
+      <header className="editor-header panel">
         <h1>Realtime Doc Editor (Prototype)</h1>
-        <p>Document: {documentId}</p>
+        <p>
+          <strong>{documentTitle}</strong> ({documentId})
+        </p>
+        <p>
+          Connection: <span className={`connection-pill ${connectionStatus}`}>{connectionStatus}</span>
+        </p>
       </header>
 
       <section className="editor-body">
         <aside className="panel">
-          <h2>Presence</h2>
-          <p>Presence list will appear here.</p>
+          <h2>Collaborators</h2>
+          <ul className="simple-list">
+            {collaborators.length === 0 && <li>No active collaborators yet.</li>}
+            {collaborators.map((session) => (
+              <li key={session.clientId}>
+                <strong>{session.displayName}</strong>
+                <div className="meta-row">
+                  id: {session.clientId === clientId ? `${session.clientId} (you)` : session.clientId}
+                </div>
+                <div className="meta-row">active block: {session.activeBlockId ?? "—"}</div>
+              </li>
+            ))}
+          </ul>
         </aside>
 
         <section className="panel">
           <h2>Blocks</h2>
-          <p>Block-segmented editor surface scaffold.</p>
-          <textarea
-            className="editor-textarea"
-            defaultValue="This is a placeholder editor area."
-          />
+          <div className="blocks">
+            {blocks.length === 0 && <p>Waiting for block data…</p>}
+            {blocks.map((block) => (
+              <label className="block-item" key={block.id}>
+                <span className="meta-row">
+                  {block.id} • order:{block.orderKey} • version:{block.version}
+                </span>
+                <textarea
+                  className="editor-textarea"
+                  value={block.text}
+                  onFocus={() => onActiveBlockChange(block.id)}
+                  onBlur={(event) => {
+                    onActiveBlockChange(undefined);
+                    onBlockCommit(block, event.currentTarget.value);
+                  }}
+                  onChange={(event) => onBlockChange(block, event.target.value)}
+                />
+              </label>
+            ))}
+          </div>
         </section>
 
         <aside className="panel">
-          <h2>Ops / Snapshot</h2>
-          <p>Operation log + snapshot indicators will appear here.</p>
+          <h2>Debug</h2>
+          <p>sequence: {sequencing.latestSequence}</p>
+          <p>snapshot version: {sequencing.latestSnapshotVersion}</p>
+          <button type="button" onClick={onRequestResync}>
+            Request resync
+          </button>
+          <h3>Recent events</h3>
+          <ul className="simple-list">
+            {recentEvents.length === 0 && <li>No events yet.</li>}
+            {recentEvents.map((event, index) => (
+              <li key={`${event}-${index}`}>{event}</li>
+            ))}
+          </ul>
         </aside>
       </section>
     </main>

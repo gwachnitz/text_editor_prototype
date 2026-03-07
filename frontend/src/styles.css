@@ -23,7 +23,7 @@ body {
 
 .editor-body {
   display: grid;
-  grid-template-columns: 220px 1fr 220px;
+  grid-template-columns: 260px 1fr 320px;
   gap: 1rem;
 }
 
@@ -36,9 +36,57 @@ body {
 
 .editor-textarea {
   width: 100%;
-  min-height: 300px;
+  min-height: 110px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   padding: 0.5rem;
   resize: vertical;
+  font: inherit;
+}
+
+.simple-list {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.meta-row {
+  color: #334155;
+  font-size: 0.875rem;
+}
+
+.blocks {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.block-item {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.connection-pill {
+  display: inline-block;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.connection-pill.connected {
+  background: #dcfce7;
+}
+
+.connection-pill.connecting {
+  background: #fef9c3;
+}
+
+.connection-pill.disconnected {
+  background: #fee2e2;
+}
+
+@media (max-width: 1000px) {
+  .editor-body {
+    grid-template-columns: 1fr;
+  }
 }
