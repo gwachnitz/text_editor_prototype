@@ -254,6 +254,8 @@ test("edit_block with stale or invalid base returns reject/resync with authorita
 
   const rejected = message(socket, "edit_rejected");
   assert.equal(rejected.operationId, "op-3");
+  assert.equal(rejected.authoritativeBlockVersion, 2);
+  assert.equal(rejected.authoritativeBlockText, "hello!");
 
   const resync = message(socket, "resync_required");
   assert.equal(resync.documentId, "doc-1");

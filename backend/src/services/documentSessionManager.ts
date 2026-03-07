@@ -3,7 +3,7 @@ import type { BlockStore } from "../stores/blockStore.js";
 import type { DocumentStore } from "../stores/documentStore.js";
 import type { OperationLogStore } from "../stores/operationLogStore.js";
 import type { ClientToServerMessage, ServerToClientMessage } from "../types/protocol.js";
-import { StaleBlockVersionError } from "./operationService.js";
+import { InvalidBaseBlockVersionError, StaleBlockVersionError } from "./operationService.js";
 import type { OperationService } from "./operationService.js";
 import type { PresenceService } from "./presenceService.js";
 import type { SnapshotService } from "./snapshotService.js";
@@ -209,7 +209,10 @@ export class DocumentSessionManager {
             );
           }
         } catch (error) {
-          if (error instanceof StaleBlockVersionError) {
+          if (
+            error instanceof StaleBlockVersionError ||
+            error instanceof InvalidBaseBlockVersionError
+          ) {
             this.send(socket, {
               type: "edit_rejected",
               documentId: session.documentId,
@@ -223,7 +226,9 @@ export class DocumentSessionManager {
               type: "edit_rejected",
               documentId: session.documentId,
               operationId: message.operation.id,
-              reason: error instanceof Error ? error.message : "Failed to apply operation"
+              reason: error instanceof Error ? error.message : "Failed to apply operation",
+              authoritativeBlockVersion: currentBlock.version,
+              authoritativeBlockText: currentBlock.text
             });
           }
 

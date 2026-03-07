@@ -34,9 +34,7 @@ export class OperationService {
     }
 
     if (input.baseBlockVersion > currentBlock.version) {
-      throw new Error(
-        `Invalid baseBlockVersion ${input.baseBlockVersion} for block version ${currentBlock.version}`
-      );
+      throw new InvalidBaseBlockVersionError(currentBlock, input.baseBlockVersion);
     }
 
     const updatedBlock = this.blockStore.applyDeterministicOperation(
@@ -75,5 +73,18 @@ export class StaleBlockVersionError extends Error {
       `Stale baseBlockVersion ${baseBlockVersion}; authoritative version is ${authoritativeBlock.version}`
     );
     this.name = "StaleBlockVersionError";
+  }
+}
+
+
+export class InvalidBaseBlockVersionError extends Error {
+  constructor(
+    readonly authoritativeBlock: Block,
+    readonly baseBlockVersion: number
+  ) {
+    super(
+      `Invalid baseBlockVersion ${baseBlockVersion}; authoritative version is ${authoritativeBlock.version}`
+    );
+    this.name = "InvalidBaseBlockVersionError";
   }
 }

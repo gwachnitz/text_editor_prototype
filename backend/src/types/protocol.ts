@@ -89,15 +89,6 @@ export type ServerToClientMessage =
       appliedBlockVersion: number;
     }
   | {
-      type: "edit_rebased";
-      documentId: string;
-      operationId: string;
-      sequence: number;
-      baseBlockVersion: number;
-      serverBlockVersionAtApply: number;
-      appliedBlockVersion: number;
-    }
-  | {
       type: "edit_rejected";
       documentId: string;
       operationId: string;
