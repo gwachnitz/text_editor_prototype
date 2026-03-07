@@ -4,6 +4,13 @@ export class OperationLogStore {
   private readonly operationsByDoc = new Map<string, Operation[]>();
 
   append(operation: Operation): void {
+    const expectedSequence =
+      this.getLatestSequence(operation.documentId) + 1;
+    if (operation.sequence !== expectedSequence) {
+      throw new Error(
+        `Invalid operation sequence for document ${operation.documentId}: expected ${expectedSequence}, got ${operation.sequence}`
+      );
+    }
     const operations = this.operationsByDoc.get(operation.documentId) ?? [];
     operations.push(operation);
     this.operationsByDoc.set(operation.documentId, operations);
