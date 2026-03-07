@@ -1,13 +1,15 @@
 import type { WebSocket } from "ws";
-import type { BlockStore } from "../stores/blockStore.js";
+import type { DocumentStore } from "../stores/documentStore.js";
 import type { OperationLogStore } from "../stores/operationLogStore.js";
 import type { ClientToServerMessage, ServerToClientMessage } from "../types/protocol.js";
+import type { OperationService } from "./operationService.js";
 import type { PresenceService } from "./presenceService.js";
 import type { SnapshotService } from "./snapshotService.js";
 
 type Dependencies = {
-  blockStore: BlockStore;
+  documentStore: DocumentStore;
   operationLogStore: OperationLogStore;
+  operationService: OperationService;
   snapshotService: SnapshotService;
   presenceService: PresenceService;
 };
@@ -25,6 +27,15 @@ export class DocumentSessionManager {
   handleClientMessage(socket: WebSocket, message: ClientToServerMessage): void {
     switch (message.type) {
       case "join_document": {
+        const document = this.deps.documentStore.getDocument(message.documentId);
+        if (!document) {
+          this.send(socket, {
+            type: "error",
+            message: `Document ${message.documentId} not found`
+          });
+          return;
+        }
+
         const priorSession = this.socketToSession.get(socket);
         if (priorSession) {
           this.deps.presenceService.leave(priorSession.documentId, priorSession.clientId);
@@ -36,7 +47,11 @@ export class DocumentSessionManager {
         };
 
         this.socketToSession.set(socket, session);
-        this.deps.presenceService.join(session.documentId, session.clientId);
+        this.deps.presenceService.join(
+          session.documentId,
+          session.clientId,
+          message.displayName ?? "Anonymous"
+        );
 
         this.send(socket, {
           type: "document_joined",
@@ -64,14 +79,32 @@ export class DocumentSessionManager {
           return;
         }
 
-        const sequence = this.deps.operationLogStore.append(session.documentId, message.operation);
-        this.deps.snapshotService.maybeCreateSnapshot(session.documentId, sequence);
+        try {
+          const applied = this.deps.operationService.submitOperation({
+            id: message.operation.id,
+            documentId: session.documentId,
+            blockId: message.operation.blockId,
+            clientId: session.clientId,
+            baseBlockVersion: message.operation.baseBlockVersion,
+            payload: message.operation.payload
+          });
 
-        this.send(socket, {
-          type: "operation_acked",
-          documentId: session.documentId,
-          sequence
-        });
+          this.deps.snapshotService.maybeCreateSnapshot(session.documentId, applied.sequence);
+          this.deps.presenceService.heartbeat(session.documentId, session.clientId);
+
+          this.send(socket, {
+            type: "operation_acked",
+            documentId: session.documentId,
+            sequence: applied.sequence,
+            appliedBlockVersion: applied.appliedBlockVersion
+          });
+        } catch (error) {
+          this.send(socket, {
+            type: "error",
+            message: error instanceof Error ? error.message : "Failed to apply operation"
+          });
+        }
+
         return;
       }
 
