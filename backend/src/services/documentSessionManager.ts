@@ -104,6 +104,14 @@ export class DocumentSessionManager {
           return;
         }
 
+        if (message.endOrderKeyExclusive < message.startOrderKeyInclusive) {
+          this.send(socket, {
+            type: "error",
+            message: "Invalid range: endOrderKeyExclusive must be >= startOrderKeyInclusive"
+          });
+          return;
+        }
+
         this.send(socket, {
           type: "range_data",
           documentId: session.documentId,
@@ -179,21 +187,29 @@ export class DocumentSessionManager {
             });
           }
 
-          this.broadcastToDocument(session.documentId, {
-            type: "block_updated",
-            documentId: session.documentId,
-            sequence: applied.sequence,
-            block: updatedBlock,
-            operation: message.operation,
-            clientId: session.clientId
-          });
+          this.broadcastToDocument(
+            session.documentId,
+            {
+              type: "block_updated",
+              documentId: session.documentId,
+              sequence: applied.sequence,
+              block: updatedBlock,
+              operation: message.operation,
+              clientId: session.clientId
+            },
+            socket
+          );
 
           if (snapshot) {
-            this.broadcastToDocument(session.documentId, {
-              type: "snapshot_created",
-              documentId: session.documentId,
-              snapshot
-            });
+            this.broadcastToDocument(
+              session.documentId,
+              {
+                type: "snapshot_created",
+                documentId: session.documentId,
+                snapshot
+              },
+              socket
+            );
           }
         } catch (error) {
           this.send(socket, {
@@ -225,13 +241,17 @@ export class DocumentSessionManager {
           .list(session.documentId)
           .find((item) => item.clientId === session.clientId);
 
-        this.broadcastToDocument(session.documentId, {
-          type: "presence_diff",
-          documentId: session.documentId,
-          clientId: session.clientId,
-          change: "updated",
-          session: latestSession
-        });
+        this.broadcastToDocument(
+          session.documentId,
+          {
+            type: "presence_diff",
+            documentId: session.documentId,
+            clientId: session.clientId,
+            change: "updated",
+            session: latestSession
+          },
+          socket
+        );
         return;
       }
 

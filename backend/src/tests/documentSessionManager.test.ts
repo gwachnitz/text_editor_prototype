@@ -106,12 +106,19 @@ test("join_document returns metadata/presence and notifies collaborators", () =>
 test("load_range and edit_block dispatch expected protocol messages", () => {
   const { manager, blockStore } = createFixture();
   const socket = new MockSocket();
+  const collaborator = new MockSocket();
 
   manager.handleClientMessage(asSocket(socket), {
     type: "join_document",
     documentId: "doc-1",
     clientId: "c-1",
     displayName: "Alpha"
+  });
+  manager.handleClientMessage(asSocket(collaborator), {
+    type: "join_document",
+    documentId: "doc-1",
+    clientId: "c-2",
+    displayName: "Beta"
   });
 
   const loadRange: ClientToServerMessage = {
@@ -141,11 +148,35 @@ test("load_range and edit_block dispatch expected protocol messages", () => {
   assert.equal(editAccepted.sequence, 1);
   assert.equal(blockStore.getBlock("doc-1", "b-1")?.text, "hello!");
 
-  const broadcast = message(socket, "block_updated");
+  const broadcast = message(collaborator, "block_updated");
   assert.equal(broadcast.sequence, 1);
 
-  const snapshot = message(socket, "snapshot_created");
+  const snapshot = message(collaborator, "snapshot_created");
   assert.equal(snapshot.snapshot.upToSequence, 1);
+});
+
+
+
+test("load_range rejects invalid ranges", () => {
+  const { manager } = createFixture();
+  const socket = new MockSocket();
+
+  manager.handleClientMessage(asSocket(socket), {
+    type: "join_document",
+    documentId: "doc-1",
+    clientId: "c-1",
+    displayName: "Alpha"
+  });
+
+  manager.handleClientMessage(asSocket(socket), {
+    type: "load_range",
+    documentId: "doc-1",
+    startOrderKeyInclusive: 5,
+    endOrderKeyExclusive: 1
+  });
+
+  const err = message(socket, "error");
+  assert.equal(err.message.includes("Invalid range"), true);
 });
 
 test("edit_block with stale base returns edit_rebased and invalid base returns reject/resync", () => {
@@ -232,7 +263,7 @@ test("presence_update, heartbeat, request_resync, and disconnect are handled", (
     }
   });
 
-  const updatedPresence = message(alpha, "presence_diff");
+  const updatedPresence = message(beta, "presence_diff");
   assert.equal(updatedPresence.change, "updated");
 
   manager.handleClientMessage(asSocket(alpha), {
