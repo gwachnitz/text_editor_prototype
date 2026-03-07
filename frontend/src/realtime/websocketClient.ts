@@ -5,16 +5,36 @@ import type {
   SubmittedOperation
 } from "../types/protocol";
 
+export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+
+type RealtimeClientOptions = {
+  onMessage?: (message: ServerToClientMessage) => void;
+  onStatusChange?: (status: ConnectionStatus) => void;
+};
+
 export class RealtimeClient {
   private socket?: WebSocket;
 
   constructor(
     private readonly url: string,
-    private readonly onMessage?: (message: ServerToClientMessage) => void
+    private readonly options: RealtimeClientOptions = {}
   ) {}
 
   connect(): void {
+    this.options.onStatusChange?.("connecting");
     this.socket = new WebSocket(this.url);
+
+    this.socket.addEventListener("open", () => {
+      this.options.onStatusChange?.("connected");
+    });
+
+    this.socket.addEventListener("close", () => {
+      this.options.onStatusChange?.("disconnected");
+    });
+
+    this.socket.addEventListener("error", () => {
+      this.options.onStatusChange?.("disconnected");
+    });
 
     this.socket.addEventListener("message", (event) => {
       let message: ServerToClientMessage;
@@ -26,9 +46,9 @@ export class RealtimeClient {
         return;
       }
 
-      if (this.onMessage) {
+      if (this.options.onMessage) {
         try {
-          this.onMessage(message);
+          this.options.onMessage(message);
         } catch (error) {
           // eslint-disable-next-line no-console
           console.error("[ws] error in onMessage handler", error, message);
