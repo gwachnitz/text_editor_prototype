@@ -24,7 +24,9 @@ export type DocumentState = {
 
 export type DocumentAction =
   | { kind: "server_message"; message: ServerToClientMessage }
-  | { kind: "connection_status"; status: ConnectionStatus };
+  | { kind: "connection_status"; status: ConnectionStatus }
+  | { kind: "reset_document"; documentId: string }
+  | { kind: "optimistic_block_text"; blockId: string; text: string };
 
 export function createInitialDocumentState(documentId: string): DocumentState {
   return {
@@ -43,7 +45,11 @@ function recordEvent(state: DocumentState, label: string): string[] {
   return events.slice(0, MAX_RECENT_EVENTS);
 }
 
-export function applyServerMessage(state: DocumentState, action: DocumentAction): DocumentState {
+export function documentReducer(state: DocumentState, action: DocumentAction): DocumentState {
+  if (action.kind === "reset_document") {
+    return createInitialDocumentState(action.documentId);
+  }
+
   if (action.kind === "connection_status") {
     return {
       ...state,
@@ -52,7 +58,29 @@ export function applyServerMessage(state: DocumentState, action: DocumentAction)
     };
   }
 
+  if (action.kind === "optimistic_block_text") {
+    const currentBlock = state.blocksById[action.blockId];
+    if (!currentBlock) {
+      return state;
+    }
+
+    return {
+      ...state,
+      blocksById: {
+        ...state.blocksById,
+        [action.blockId]: {
+          ...currentBlock,
+          text: action.text
+        }
+      }
+    };
+  }
+
   const message = action.message;
+
+  if ("documentId" in message && message.documentId !== state.documentId) {
+    return state;
+  }
 
   switch (message.type) {
     case "document_joined": {

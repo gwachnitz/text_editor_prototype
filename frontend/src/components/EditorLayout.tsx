@@ -11,7 +11,9 @@ type Props = {
   sequencing: SequencingMetadata;
   recentEvents: string[];
   onBlockChange: (block: Block, text: string) => void;
+  onBlockCommit: (block: Block, text: string) => void;
   onActiveBlockChange: (blockId?: string) => void;
+  onRequestResync: () => void;
 };
 
 export function EditorLayout({
@@ -24,7 +26,9 @@ export function EditorLayout({
   sequencing,
   recentEvents,
   onBlockChange,
-  onActiveBlockChange
+  onBlockCommit,
+  onActiveBlockChange,
+  onRequestResync
 }: Props): JSX.Element {
   return (
     <main className="editor-shell">
@@ -46,7 +50,9 @@ export function EditorLayout({
             {collaborators.map((session) => (
               <li key={session.clientId}>
                 <strong>{session.displayName}</strong>
-                <div className="meta-row">id: {session.clientId === clientId ? `${session.clientId} (you)` : session.clientId}</div>
+                <div className="meta-row">
+                  id: {session.clientId === clientId ? `${session.clientId} (you)` : session.clientId}
+                </div>
                 <div className="meta-row">active block: {session.activeBlockId ?? "—"}</div>
               </li>
             ))}
@@ -66,7 +72,10 @@ export function EditorLayout({
                   className="editor-textarea"
                   value={block.text}
                   onFocus={() => onActiveBlockChange(block.id)}
-                  onBlur={() => onActiveBlockChange(undefined)}
+                  onBlur={(event) => {
+                    onActiveBlockChange(undefined);
+                    onBlockCommit(block, event.currentTarget.value);
+                  }}
                   onChange={(event) => onBlockChange(block, event.target.value)}
                 />
               </label>
@@ -78,6 +87,9 @@ export function EditorLayout({
           <h2>Debug</h2>
           <p>sequence: {sequencing.latestSequence}</p>
           <p>snapshot version: {sequencing.latestSnapshotVersion}</p>
+          <button type="button" onClick={onRequestResync}>
+            Request resync
+          </button>
           <h3>Recent events</h3>
           <ul className="simple-list">
             {recentEvents.length === 0 && <li>No events yet.</li>}
