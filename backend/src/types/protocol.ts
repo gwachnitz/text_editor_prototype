@@ -11,7 +11,7 @@ export type SubmittedOperation = {
   id: string;
   blockId: string;
   baseBlockVersion: number;
-  payload: OperationPayload;
+  payload: Extract<OperationPayload, { type: "replace_block" }>;
 };
 
 export type SequencingMetadata = {
@@ -102,6 +102,8 @@ export type ServerToClientMessage =
       documentId: string;
       operationId: string;
       reason: string;
+      authoritativeBlockVersion?: number;
+      authoritativeBlockText?: string;
     }
   | {
       type: "presence_state";

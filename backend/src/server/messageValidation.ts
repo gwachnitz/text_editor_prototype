@@ -56,28 +56,11 @@ export function isClientToServerMessage(value: unknown): value is ClientToServer
 }
 
 function isOperationPayload(value: unknown): boolean {
-  if (!isObject(value) || typeof value.type !== "string") {
-    return false;
-  }
-
-  switch (value.type) {
-    case "insert_text":
-      return isFiniteNumber(value.offset) && typeof value.text === "string";
-
-    case "delete_text":
-      return (
-        isFiniteNumber(value.offset) &&
-        isFiniteNumber(value.length) &&
-        Number.isInteger(value.length) &&
-        value.length >= 0
-      );
-
-    case "replace_block":
-      return typeof value.text === "string";
-
-    default:
-      return false;
-  }
+  return (
+    isObject(value) &&
+    value.type === "replace_block" &&
+    typeof value.text === "string"
+  );
 }
 
 function isPresenceState(value: unknown): boolean {

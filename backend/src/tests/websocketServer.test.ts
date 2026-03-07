@@ -42,42 +42,6 @@ test("isClientToServerMessage accepts supported protocol messages", () => {
 
   assert.equal(
     isClientToServerMessage({
-      type: "edit_block",
-      documentId: "d1",
-      operation: {
-        id: "op-2",
-        blockId: "b1",
-        baseBlockVersion: 1,
-        payload: {
-          type: "insert_text",
-          offset: 0,
-          text: "x"
-        }
-      }
-    }),
-    true
-  );
-
-  assert.equal(
-    isClientToServerMessage({
-      type: "edit_block",
-      documentId: "d1",
-      operation: {
-        id: "op-3",
-        blockId: "b1",
-        baseBlockVersion: 1,
-        payload: {
-          type: "delete_text",
-          offset: 0,
-          length: 3
-        }
-      }
-    }),
-    true
-  );
-
-  assert.equal(
-    isClientToServerMessage({
       type: "presence_update",
       documentId: "d1",
       clientId: "c1",
@@ -155,7 +119,7 @@ test("isClientToServerMessage rejects malformed payloads", () => {
         baseBlockVersion: 1,
         payload: {
           type: "insert_text",
-          offset: "nope",
+          offset: 0,
           text: "x"
         }
       }
@@ -174,7 +138,7 @@ test("isClientToServerMessage rejects malformed payloads", () => {
         payload: {
           type: "delete_text",
           offset: 1,
-          length: -2
+          length: 2
         }
       }
     }),

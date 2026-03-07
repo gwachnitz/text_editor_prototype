@@ -3,6 +3,7 @@ import type { BlockStore } from "../stores/blockStore.js";
 import type { DocumentStore } from "../stores/documentStore.js";
 import type { OperationLogStore } from "../stores/operationLogStore.js";
 import type { ClientToServerMessage, ServerToClientMessage } from "../types/protocol.js";
+import { StaleBlockVersionError } from "./operationService.js";
 import type { OperationService } from "./operationService.js";
 import type { PresenceService } from "./presenceService.js";
 import type { SnapshotService } from "./snapshotService.js";
@@ -153,8 +154,6 @@ export class DocumentSessionManager {
           return;
         }
 
-        const versionAtApply = currentBlock.version;
-
         try {
           const applied = this.deps.operationService.submitOperation({
             id: message.operation.id,
@@ -177,25 +176,13 @@ export class DocumentSessionManager {
           const snapshot = this.deps.snapshotService.maybeCreateSnapshot(session.documentId, applied.sequence);
           this.deps.presenceService.heartbeat(session.documentId, session.clientId);
 
-          if (message.operation.baseBlockVersion < versionAtApply) {
-            this.send(socket, {
-              type: "edit_rebased",
-              documentId: session.documentId,
-              operationId: message.operation.id,
-              sequence: applied.sequence,
-              baseBlockVersion: message.operation.baseBlockVersion,
-              serverBlockVersionAtApply: versionAtApply,
-              appliedBlockVersion: applied.appliedBlockVersion
-            });
-          } else {
-            this.send(socket, {
-              type: "edit_accepted",
-              documentId: session.documentId,
-              operationId: message.operation.id,
-              sequence: applied.sequence,
-              appliedBlockVersion: applied.appliedBlockVersion
-            });
-          }
+          this.send(socket, {
+            type: "edit_accepted",
+            documentId: session.documentId,
+            operationId: message.operation.id,
+            sequence: applied.sequence,
+            appliedBlockVersion: applied.appliedBlockVersion
+          });
 
           this.broadcastToDocument(
             session.documentId,
@@ -222,12 +209,23 @@ export class DocumentSessionManager {
             );
           }
         } catch (error) {
-          this.send(socket, {
-            type: "edit_rejected",
-            documentId: session.documentId,
-            operationId: message.operation.id,
-            reason: error instanceof Error ? error.message : "Failed to apply operation"
-          });
+          if (error instanceof StaleBlockVersionError) {
+            this.send(socket, {
+              type: "edit_rejected",
+              documentId: session.documentId,
+              operationId: message.operation.id,
+              reason: error.message,
+              authoritativeBlockVersion: error.authoritativeBlock.version,
+              authoritativeBlockText: error.authoritativeBlock.text
+            });
+          } else {
+            this.send(socket, {
+              type: "edit_rejected",
+              documentId: session.documentId,
+              operationId: message.operation.id,
+              reason: error instanceof Error ? error.message : "Failed to apply operation"
+            });
+          }
 
           this.send(socket, {
             type: "resync_required",
