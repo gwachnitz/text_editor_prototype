@@ -20,12 +20,26 @@ export class OperationService {
   ) {}
 
   submitOperation(input: SubmitOperationInput): Operation {
-    const sequence = this.operationLogStore.getLatestSequence(input.documentId) + 1;
+    const currentBlock = this.blockStore.getBlock(input.documentId, input.blockId);
+    if (!currentBlock) {
+      throw new Error(`Block ${input.blockId} not found in document ${input.documentId}`);
+    }
+
+    if (input.baseBlockVersion > currentBlock.version) {
+      throw new Error(
+        `Invalid baseBlockVersion ${input.baseBlockVersion} for block version ${currentBlock.version}`
+      );
+    }
+
+    // Deterministic conflict handling for prototype: apply to latest server block state
+    // even when baseBlockVersion is stale.
     const updatedBlock = this.blockStore.applyDeterministicOperation(
       input.documentId,
       input.blockId,
       input.payload
     );
+
+    const sequence = this.operationLogStore.getLatestSequence(input.documentId) + 1;
 
     const operation: Operation = {
       id: input.id,

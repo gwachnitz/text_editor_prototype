@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BlockStore } from "../stores/blockStore.js";
-import { DocumentStore } from "../stores/documentStore.js";
 import { SnapshotService } from "../services/snapshotService.js";
 import { PresenceService } from "../services/presenceService.js";
+import { OperationService } from "../services/operationService.js";
+import { BlockStore } from "../stores/blockStore.js";
+import { DocumentStore } from "../stores/documentStore.js";
+import { OperationLogStore } from "../stores/operationLogStore.js";
 import type { Block } from "../types/model.js";
 
 test("BlockStore applies deterministic operations and increments version", () => {
@@ -56,6 +58,58 @@ test("BlockStore retrieves blocks by order range", () => {
   assert.deepEqual(
     store.getBlocksInRange("d1", 1, 3).map((item) => item.id),
     ["b2", "b3"]
+  );
+});
+
+test("OperationService deterministically applies stale-base operations but rejects future versions", () => {
+  const documentStore = new DocumentStore();
+  const blockStore = new BlockStore();
+  const operationLogStore = new OperationLogStore();
+  const operationService = new OperationService(blockStore, operationLogStore, documentStore);
+
+  documentStore.upsertDocument({
+    id: "d1",
+    title: "Doc",
+    createdAt: 10,
+    updatedAt: 10,
+    latestSnapshotVersion: 0
+  });
+
+  blockStore.setDocumentBlocks("d1", [
+    { id: "b1", documentId: "d1", orderKey: 0, text: "abc", version: 3, updatedAt: 10 }
+  ]);
+
+  const staleBased = operationService.submitOperation({
+    id: "op-1",
+    documentId: "d1",
+    blockId: "b1",
+    clientId: "c1",
+    baseBlockVersion: 1,
+    payload: {
+      type: "insert_text",
+      offset: 3,
+      text: "!"
+    }
+  });
+
+  assert.equal(staleBased.appliedBlockVersion, 4);
+  assert.equal(staleBased.sequence, 1);
+  assert.equal(blockStore.getBlock("d1", "b1")?.text, "abc!");
+
+  assert.throws(
+    () =>
+      operationService.submitOperation({
+        id: "op-2",
+        documentId: "d1",
+        blockId: "b1",
+        clientId: "c1",
+        baseBlockVersion: 999,
+        payload: {
+          type: "replace_block",
+          text: "will-fail"
+        }
+      }),
+    /Invalid baseBlockVersion/
   );
 });
 

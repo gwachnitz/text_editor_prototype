@@ -79,24 +79,32 @@ export class DocumentSessionManager {
           return;
         }
 
-        const applied = this.deps.operationService.submitOperation({
-          id: message.operation.id,
-          documentId: session.documentId,
-          blockId: message.operation.blockId,
-          clientId: message.operation.clientId,
-          baseBlockVersion: message.operation.baseBlockVersion,
-          payload: message.operation.payload
-        });
+        try {
+          const applied = this.deps.operationService.submitOperation({
+            id: message.operation.id,
+            documentId: session.documentId,
+            blockId: message.operation.blockId,
+            clientId: session.clientId,
+            baseBlockVersion: message.operation.baseBlockVersion,
+            payload: message.operation.payload
+          });
 
-        this.deps.snapshotService.maybeCreateSnapshot(session.documentId, applied.sequence);
-        this.deps.presenceService.heartbeat(session.documentId, session.clientId);
+          this.deps.snapshotService.maybeCreateSnapshot(session.documentId, applied.sequence);
+          this.deps.presenceService.heartbeat(session.documentId, session.clientId);
 
-        this.send(socket, {
-          type: "operation_acked",
-          documentId: session.documentId,
-          sequence: applied.sequence,
-          appliedBlockVersion: applied.appliedBlockVersion
-        });
+          this.send(socket, {
+            type: "operation_acked",
+            documentId: session.documentId,
+            sequence: applied.sequence,
+            appliedBlockVersion: applied.appliedBlockVersion
+          });
+        } catch (error) {
+          this.send(socket, {
+            type: "error",
+            message: error instanceof Error ? error.message : "Failed to apply operation"
+          });
+        }
+
         return;
       }
 

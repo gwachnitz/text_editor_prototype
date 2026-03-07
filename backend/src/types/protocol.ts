@@ -10,7 +10,6 @@ export type PresenceState = {
 export type SubmittedOperation = {
   id: string;
   blockId: string;
-  clientId: string;
   baseBlockVersion: number;
   payload: OperationPayload;
 };
