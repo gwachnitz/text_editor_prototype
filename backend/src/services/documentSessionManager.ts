@@ -32,13 +32,8 @@ export class DocumentSessionManager {
   constructor(private readonly deps: Dependencies) {}
 
   handleClientMessage(socket: WebSocket, message: ClientToServerMessage): void {
-    if (message.type !== "join_document") {
-      this.prunePresenceAndBroadcastLeaves(message.documentId);
-    }
-
     switch (message.type) {
       case "join_document": {
-        this.prunePresenceAndBroadcastLeaves(message.documentId);
         const document = this.deps.documentStore.getDocument(message.documentId);
         if (!document) {
           this.send(socket, {
@@ -47,6 +42,8 @@ export class DocumentSessionManager {
           });
           return;
         }
+
+        this.prunePresenceAndBroadcastLeaves(message.documentId);
 
         const priorSession = this.socketToSession.get(socket);
         if (priorSession) {
@@ -112,6 +109,8 @@ export class DocumentSessionManager {
           return;
         }
 
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
+
         if (message.endOrderKeyExclusive < message.startOrderKeyInclusive) {
           this.send(socket, {
             type: "error",
@@ -147,6 +146,8 @@ export class DocumentSessionManager {
         if (!session) {
           return;
         }
+
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
 
         const currentBlock = this.deps.blockStore.getBlock(session.documentId, message.operation.blockId);
         if (!currentBlock) {
@@ -254,6 +255,8 @@ export class DocumentSessionManager {
           return;
         }
 
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
+
         this.deps.presenceService.update(session.documentId, session.clientId, message.presence);
         const latestSession = this.deps.presenceService
           .list(session.documentId)
@@ -279,6 +282,8 @@ export class DocumentSessionManager {
           return;
         }
 
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
+
         this.deps.presenceService.heartbeat(session.documentId, session.clientId);
         return;
       }
@@ -288,6 +293,8 @@ export class DocumentSessionManager {
         if (!session) {
           return;
         }
+
+        this.prunePresenceAndBroadcastLeaves(session.documentId);
 
         this.send(socket, {
           type: "resync_required",

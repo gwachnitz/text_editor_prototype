@@ -19,6 +19,7 @@ const operationService = new OperationService(blockStore, operationLogStore, doc
 const snapshotService = new SnapshotService(blockStore, documentStore);
 const recoveryService = new RecoveryService(operationLogStore, snapshotService);
 const presenceService = new PresenceService();
+const debugEndpointsEnabled = process.env.ENABLE_DEBUG_ENDPOINTS === "true";
 
 seedDemoData(documentStore, blockStore);
 
@@ -34,11 +35,24 @@ const sessionManager = new DocumentSessionManager({
 const httpServer = createServer((req, res) => {
   const reqMeta = req as { url?: string; method?: string; headers?: Record<string, string | undefined> };
   const method = reqMeta.method ?? "GET";
-  const url = new URL(reqMeta.url ?? "/", `http://${reqMeta.headers?.host ?? "localhost"}`);
+  let url: URL;
+  try {
+    url = new URL(reqMeta.url ?? "/", `http://${reqMeta.headers?.host ?? "localhost"}`);
+  } catch {
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid request URL" }));
+    return;
+  }
 
   if (method === "GET" && url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  if (url.pathname.startsWith("/debug/") && !debugEndpointsEnabled) {
+    res.writeHead(404);
+    res.end();
     return;
   }
 
@@ -80,7 +94,16 @@ const httpServer = createServer((req, res) => {
     try {
       const documentId = decodeURIComponent(reconstructPath[1]);
       const sequenceParam = url.searchParams.get("targetSequence");
-      const targetSequence = sequenceParam === null ? undefined : Number(sequenceParam);
+      let targetSequence: number | undefined;
+      if (sequenceParam !== null) {
+        const parsed = Number(sequenceParam);
+        if (!Number.isFinite(parsed)) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid targetSequence; must be a finite number" }));
+          return;
+        }
+        targetSequence = Math.floor(parsed);
+      }
       const result = recoveryService.reconstructDocumentState(documentId, targetSequence);
 
       res.writeHead(200, { "content-type": "application/json" });

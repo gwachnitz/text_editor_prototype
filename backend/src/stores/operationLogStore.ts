@@ -31,11 +31,12 @@ export class OperationLogStore {
   }
 
   listRecent(documentId: string, limit: number): Operation[] {
-    if (limit <= 0) {
+    const normalizedLimit = Number.isFinite(limit) ? Math.floor(limit) : 0;
+    if (normalizedLimit <= 0) {
       return [];
     }
 
     const operations = this.operationsByDoc.get(documentId) ?? [];
-    return operations.slice(Math.max(operations.length - limit, 0));
+    return operations.slice(Math.max(operations.length - normalizedLimit, 0));
   }
 }

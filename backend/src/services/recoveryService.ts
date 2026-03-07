@@ -17,10 +17,20 @@ export class RecoveryService {
 
   reconstructDocumentState(documentId: string, targetSequence?: number): ReconstructionResult {
     const latestSequence = this.operationLogStore.getLatestSequence(documentId);
-    const resolvedTarget = targetSequence ?? latestSequence;
+    let resolvedTarget = targetSequence ?? latestSequence;
+
+    if (!Number.isFinite(resolvedTarget)) {
+      throw new Error("targetSequence must be a finite number");
+    }
+
+    resolvedTarget = Math.floor(resolvedTarget);
 
     if (resolvedTarget < 0) {
       throw new Error("targetSequence must be >= 0");
+    }
+
+    if (resolvedTarget > latestSequence) {
+      resolvedTarget = latestSequence;
     }
 
     const snapshot = this.snapshotService.getLatestBeforeOrAt(documentId, resolvedTarget);
