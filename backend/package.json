@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test dist/tests/coreModel.test.js"
   },
   "dependencies": {
     "ws": "^8.18.0"

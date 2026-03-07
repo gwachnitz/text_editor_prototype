@@ -1,36 +1,54 @@
 import type { BlockStore } from "../stores/blockStore.js";
-import type { OperationLogStore } from "../stores/operationLogStore.js";
-
-type SnapshotMeta = {
-  latestSequence: number;
-  createdAt: number;
-};
+import type { DocumentStore } from "../stores/documentStore.js";
+import type { Snapshot } from "../types/model.js";
 
 export class SnapshotService {
-  private readonly latestSnapshotByDoc = new Map<string, SnapshotMeta>();
+  private readonly snapshotsByDoc = new Map<string, Snapshot[]>();
 
   constructor(
     private readonly blockStore: BlockStore,
-    private readonly operationLogStore: OperationLogStore
+    private readonly documentStore: DocumentStore,
+    private readonly snapshotInterval: number = 20
   ) {}
 
-  maybeCreateSnapshot(documentId: string, latestSequence: number): void {
-    if (latestSequence % 20 !== 0) {
-      return;
+  maybeCreateSnapshot(documentId: string, latestSequence: number): Snapshot | undefined {
+    if (latestSequence === 0 || latestSequence % this.snapshotInterval !== 0) {
+      return undefined;
     }
 
-    // Placeholder: when implementing real behavior, materialize block state + trim/reindex op log.
-    this.latestSnapshotByDoc.set(documentId, {
-      latestSequence,
-      createdAt: Date.now()
-    });
-
-    // Read stores to make planned dependencies explicit in this scaffold.
-    this.blockStore.getDocumentBlocks(documentId);
-    this.operationLogStore.getLatestSequence(documentId);
+    return this.createSnapshot(documentId, latestSequence);
   }
 
-  getLatest(documentId: string): SnapshotMeta | undefined {
-    return this.latestSnapshotByDoc.get(documentId);
+  createSnapshot(documentId: string, upToSequence: number): Snapshot {
+    const snapshot: Snapshot = {
+      id: `${documentId}:snapshot:${upToSequence}`,
+      documentId,
+      createdAt: Date.now(),
+      upToSequence,
+      serializedBlockState: JSON.stringify(this.blockStore.getDocumentBlocks(documentId))
+    };
+
+    const snapshots = this.snapshotsByDoc.get(documentId) ?? [];
+    snapshots.push(snapshot);
+    this.snapshotsByDoc.set(documentId, snapshots);
+
+    this.documentStore.setLatestSnapshotVersion(documentId, upToSequence);
+
+    return snapshot;
+  }
+
+  getLatest(documentId: string): Snapshot | undefined {
+    return this.snapshotsByDoc.get(documentId)?.at(-1);
+  }
+
+  getLatestBeforeOrAt(documentId: string, sequence: number): Snapshot | undefined {
+    const snapshots = this.snapshotsByDoc.get(documentId) ?? [];
+    for (let idx = snapshots.length - 1; idx >= 0; idx -= 1) {
+      if (snapshots[idx].upToSequence <= sequence) {
+        return snapshots[idx];
+      }
+    }
+
+    return undefined;
   }
 }

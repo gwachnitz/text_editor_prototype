@@ -1,14 +1,23 @@
+import type { PresenceSession } from "../types/model.js";
 import type { PresenceState } from "../types/protocol.js";
 
 export class PresenceService {
-  private readonly presenceByDoc = new Map<string, Map<string, PresenceState>>();
+  private readonly presenceByDoc = new Map<string, Map<string, PresenceSession>>();
 
-  join(documentId: string, clientId: string): void {
-    if (!this.presenceByDoc.has(documentId)) {
-      this.presenceByDoc.set(documentId, new Map());
-    }
+  constructor(private readonly ttlMs: number = 30_000) {}
 
-    this.presenceByDoc.get(documentId)?.set(clientId, { status: "online" });
+  join(documentId: string, clientId: string, displayName: string = "Anonymous"): void {
+    const now = Date.now();
+    const current = this.presenceByDoc.get(documentId) ?? new Map<string, PresenceSession>();
+
+    current.set(clientId, {
+      clientId,
+      displayName,
+      documentId,
+      lastHeartbeatAt: now
+    });
+
+    this.presenceByDoc.set(documentId, current);
   }
 
   leave(documentId: string, clientId: string): void {
@@ -24,16 +33,58 @@ export class PresenceService {
     }
   }
 
-  update(documentId: string, clientId: string, presence: PresenceState): void {
-    if (!this.presenceByDoc.has(documentId)) {
-      this.presenceByDoc.set(documentId, new Map());
+  heartbeat(documentId: string, clientId: string): void {
+    const session = this.presenceByDoc.get(documentId)?.get(clientId);
+    if (!session) {
+      return;
     }
 
-    this.presenceByDoc.get(documentId)?.set(clientId, presence);
+    session.lastHeartbeatAt = Date.now();
   }
 
-  list(documentId: string): Array<{ clientId: string; state: PresenceState }> {
-    const entries = this.presenceByDoc.get(documentId)?.entries() ?? [];
-    return [...entries].map(([clientId, state]) => ({ clientId, state }));
+  update(documentId: string, clientId: string, presence: PresenceState): void {
+    const docPresence = this.presenceByDoc.get(documentId) ?? new Map<string, PresenceSession>();
+    const now = Date.now();
+
+    const existing = docPresence.get(clientId) ?? {
+      clientId,
+      displayName: presence.displayName ?? "Anonymous",
+      documentId,
+      lastHeartbeatAt: now
+    };
+
+    existing.displayName = presence.displayName ?? existing.displayName;
+    existing.activeBlockId = presence.activeBlockId ?? presence.cursorBlockId ?? existing.activeBlockId;
+    existing.cursor = {
+      blockId: presence.cursorBlockId,
+      offset: presence.cursorOffset
+    };
+    existing.lastHeartbeatAt = now;
+
+    docPresence.set(clientId, existing);
+    this.presenceByDoc.set(documentId, docPresence);
+  }
+
+  list(documentId: string): PresenceSession[] {
+    this.pruneExpired(documentId);
+    return [...(this.presenceByDoc.get(documentId)?.values() ?? [])];
+  }
+
+  pruneExpired(documentId: string): void {
+    const sessions = this.presenceByDoc.get(documentId);
+    if (!sessions) {
+      return;
+    }
+
+    const cutoff = Date.now() - this.ttlMs;
+    for (const [clientId, session] of sessions.entries()) {
+      if (session.lastHeartbeatAt < cutoff) {
+        sessions.delete(clientId);
+      }
+    }
+
+    if (sessions.size === 0) {
+      this.presenceByDoc.delete(documentId);
+    }
   }
 }

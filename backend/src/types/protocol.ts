@@ -1,20 +1,18 @@
-export type Block = {
-  id: string;
-  text: string;
-  order: number;
-};
-
-export type Operation = {
-  kind: "insert_text" | "delete_text" | "replace_block";
-  blockId: string;
-  payload: unknown;
-  clientTimestamp: number;
-};
+import type { OperationPayload } from "./model.js";
 
 export type PresenceState = {
-  status: "online" | "idle";
+  displayName?: string;
+  activeBlockId?: string;
   cursorBlockId?: string;
   cursorOffset?: number;
+};
+
+export type SubmittedOperation = {
+  id: string;
+  blockId: string;
+  clientId: string;
+  baseBlockVersion: number;
+  payload: OperationPayload;
 };
 
 export type ClientToServerMessage =
@@ -22,11 +20,12 @@ export type ClientToServerMessage =
       type: "join_document";
       documentId: string;
       clientId: string;
+      displayName?: string;
     }
   | {
       type: "submit_operation";
       documentId: string;
-      operation: Operation;
+      operation: SubmittedOperation;
     }
   | {
       type: "presence_update";
@@ -45,6 +44,7 @@ export type ServerToClientMessage =
       type: "operation_acked";
       documentId: string;
       sequence: number;
+      appliedBlockVersion: number;
     }
   | {
       type: "presence_acked";
