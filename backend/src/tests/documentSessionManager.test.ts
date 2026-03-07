@@ -358,7 +358,7 @@ test("expired presence is pruned and broadcast as left during later activity", (
           item.type === "presence_diff" && item.change === "left"
       );
     assert.ok(leftMessage);
-    assert.equal(leftMessage.clientId, "c-1");
+    assert.equal(leftMessage?.clientId, "c-1");
   } finally {
     Date.now = originalNow;
   }
