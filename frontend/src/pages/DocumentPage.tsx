@@ -8,9 +8,11 @@ type Props = {
 
 export function DocumentPage({ documentId }: Props): JSX.Element {
   useEffect(() => {
-    const client = new RealtimeClient("ws://localhost:3001/ws");
+    const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:3001/ws";
+    const client = new RealtimeClient(wsUrl);
+    const clientId = crypto.randomUUID();
     client.connect();
-    client.joinDocument({ documentId, clientId: "local-dev-client" });
+    client.joinDocument({ documentId, clientId });
 
     return () => {
       client.disconnect();
