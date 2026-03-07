@@ -100,6 +100,15 @@ export class DocumentSessionManager {
           documentId: session.documentId,
           clientId: session.clientId
         });
+        return;
+      }
+
+      default: {
+        this.send(socket, {
+          type: "error",
+          message: "Unknown client message type"
+        } as ServerToClientMessage);
+        return;
       }
     }
   }
