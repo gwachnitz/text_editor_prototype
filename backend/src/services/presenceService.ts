@@ -11,6 +11,19 @@ export class PresenceService {
     this.presenceByDoc.get(documentId)?.set(clientId, { status: "online" });
   }
 
+  leave(documentId: string, clientId: string): void {
+    const docPresence = this.presenceByDoc.get(documentId);
+    if (!docPresence) {
+      return;
+    }
+
+    docPresence.delete(clientId);
+
+    if (docPresence.size === 0) {
+      this.presenceByDoc.delete(documentId);
+    }
+  }
+
   update(documentId: string, clientId: string, presence: PresenceState): void {
     if (!this.presenceByDoc.has(documentId)) {
       this.presenceByDoc.set(documentId, new Map());

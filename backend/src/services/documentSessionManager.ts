@@ -25,6 +25,11 @@ export class DocumentSessionManager {
   handleClientMessage(socket: WebSocket, message: ClientToServerMessage): void {
     switch (message.type) {
       case "join_document": {
+        const priorSession = this.socketToSession.get(socket);
+        if (priorSession) {
+          this.deps.presenceService.leave(priorSession.documentId, priorSession.clientId);
+        }
+
         const session: SessionInfo = {
           documentId: message.documentId,
           clientId: message.clientId
@@ -102,6 +107,7 @@ export class DocumentSessionManager {
   handleClientDisconnect(socket: WebSocket): void {
     const session = this.socketToSession.get(socket);
     if (session) {
+      this.deps.presenceService.leave(session.documentId, session.clientId);
       this.socketToSession.delete(socket);
     }
   }
