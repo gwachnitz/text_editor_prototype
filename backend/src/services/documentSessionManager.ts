@@ -32,8 +32,13 @@ export class DocumentSessionManager {
   constructor(private readonly deps: Dependencies) {}
 
   handleClientMessage(socket: WebSocket, message: ClientToServerMessage): void {
+    if (message.type !== "join_document") {
+      this.prunePresenceAndBroadcastLeaves(message.documentId);
+    }
+
     switch (message.type) {
       case "join_document": {
+        this.prunePresenceAndBroadcastLeaves(message.documentId);
         const document = this.deps.documentStore.getDocument(message.documentId);
         if (!document) {
           this.send(socket, {
@@ -349,6 +354,18 @@ export class DocumentSessionManager {
       clientId: session.clientId,
       change: "left"
     });
+  }
+
+  private prunePresenceAndBroadcastLeaves(documentId: string): void {
+    const expired = this.deps.presenceService.pruneExpired(documentId);
+    for (const session of expired) {
+      this.broadcastToDocument(documentId, {
+        type: "presence_diff",
+        documentId,
+        clientId: session.clientId,
+        change: "left"
+      });
+    }
   }
 
   private getSequencing(documentId: string): { latestSequence: number; latestSnapshotVersion: number } {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { SnapshotService } from "../services/snapshotService.js";
 import { PresenceService } from "../services/presenceService.js";
 import { OperationService } from "../services/operationService.js";
+import { RecoveryService } from "../services/recoveryService.js";
 import { BlockStore } from "../stores/blockStore.js";
 import { DocumentStore } from "../stores/documentStore.js";
 import { OperationLogStore } from "../stores/operationLogStore.js";
@@ -157,4 +158,74 @@ test("PresenceService expires stale sessions", () => {
   } finally {
     Date.now = originalNow;
   }
+});
+
+test("RecoveryService reconstructs block state from snapshot + later operations", () => {
+  const documentStore = new DocumentStore();
+  const blockStore = new BlockStore();
+  const operationLogStore = new OperationLogStore();
+  const operationService = new OperationService(blockStore, operationLogStore, documentStore);
+
+  documentStore.upsertDocument({
+    id: "d1",
+    title: "Doc",
+    createdAt: 10,
+    updatedAt: 10,
+    latestSnapshotVersion: 0
+  });
+
+  blockStore.setDocumentBlocks("d1", [
+    { id: "b1", documentId: "d1", orderKey: 0, text: "start", version: 1, updatedAt: 10 }
+  ]);
+
+  operationService.submitOperation({
+    id: "op-1",
+    documentId: "d1",
+    blockId: "b1",
+    clientId: "c1",
+    baseBlockVersion: 1,
+    payload: { type: "replace_block", text: "line-1" }
+  });
+
+  const snapshotService = new SnapshotService(blockStore, documentStore, 20);
+  snapshotService.createSnapshot("d1", operationLogStore.getLatestSequence("d1"));
+
+  operationService.submitOperation({
+    id: "op-2",
+    documentId: "d1",
+    blockId: "b1",
+    clientId: "c1",
+    baseBlockVersion: 2,
+    payload: { type: "replace_block", text: "line-2" }
+  });
+
+  const recoveryService = new RecoveryService(operationLogStore, snapshotService);
+  const reconstructed = recoveryService.reconstructDocumentState("d1");
+
+  assert.equal(reconstructed.snapshot?.upToSequence, 1);
+  assert.equal(reconstructed.appliedOperations.length, 1);
+  assert.equal(reconstructed.blocks[0]?.text, "line-2");
+  assert.equal(reconstructed.blocks[0]?.version, 3);
+});
+
+test("OperationLogStore.listRecent returns tail subset", () => {
+  const store = new OperationLogStore();
+  for (let sequence = 1; sequence <= 3; sequence += 1) {
+    store.append({
+      id: `op-${sequence}`,
+      documentId: "d1",
+      blockId: "b1",
+      clientId: "c1",
+      baseBlockVersion: sequence,
+      appliedBlockVersion: sequence + 1,
+      sequence,
+      payload: { type: "replace_block", text: `v${sequence}` },
+      createdAt: sequence
+    });
+  }
+
+  assert.deepEqual(
+    store.listRecent("d1", 2).map((entry) => entry.id),
+    ["op-2", "op-3"]
+  );
 });

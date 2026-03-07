@@ -19,13 +19,13 @@ class MockSocket {
   }
 }
 
-function createFixture() {
+function createFixture(presenceTtlMs = 30_000) {
   const documentStore = new DocumentStore();
   const blockStore = new BlockStore();
   const operationLogStore = new OperationLogStore();
   const operationService = new OperationService(blockStore, operationLogStore, documentStore);
   const snapshotService = new SnapshotService(blockStore, documentStore, 1);
-  const presenceService = new PresenceService();
+  const presenceService = new PresenceService(presenceTtlMs);
 
   const doc: Document = {
     id: "doc-1",
@@ -312,4 +312,54 @@ test("presence_update, heartbeat, request_resync, and disconnect are handled", (
   const leftMessage = message(beta, "presence_diff");
   assert.equal(leftMessage.change, "left");
   assert.equal(leftMessage.clientId, "c-1");
+});
+
+test("expired presence is pruned and broadcast as left during later activity", () => {
+  let now = 1000;
+  const originalNow = Date.now;
+  Date.now = () => now;
+
+  try {
+    const { manager } = createFixture(100);
+    const alpha = new MockSocket();
+    const beta = new MockSocket();
+
+    manager.handleClientMessage(asSocket(alpha), {
+      type: "join_document",
+      documentId: "doc-1",
+      clientId: "c-1",
+      displayName: "Alpha"
+    });
+
+    now = 1050;
+    manager.handleClientMessage(asSocket(beta), {
+      type: "join_document",
+      documentId: "doc-1",
+      clientId: "c-2",
+      displayName: "Beta"
+    });
+
+    now = 1150;
+    manager.handleClientMessage(asSocket(beta), {
+      type: "presence_update",
+      documentId: "doc-1",
+      clientId: "c-2",
+      presence: {
+        activeBlockId: "b-1"
+      }
+    });
+
+    const leftMessage = [...beta.messages]
+      .reverse()
+      .find(
+        (
+          item
+        ): item is Extract<ServerToClientMessage, { type: "presence_diff" }> =>
+          item.type === "presence_diff" && item.change === "left"
+      );
+    assert.ok(leftMessage);
+    assert.equal(leftMessage.clientId, "c-1");
+  } finally {
+    Date.now = originalNow;
+  }
 });

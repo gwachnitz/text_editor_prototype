@@ -72,15 +72,17 @@ export class PresenceService {
     return [...(this.presenceByDoc.get(documentId)?.values() ?? [])];
   }
 
-  pruneExpired(documentId: string): void {
+  pruneExpired(documentId: string): PresenceSession[] {
     const sessions = this.presenceByDoc.get(documentId);
     if (!sessions) {
-      return;
+      return [];
     }
 
     const cutoff = Date.now() - this.ttlMs;
+    const expired: PresenceSession[] = [];
     for (const [clientId, session] of sessions.entries()) {
       if (session.lastHeartbeatAt < cutoff) {
+        expired.push(session);
         sessions.delete(clientId);
       }
     }
@@ -88,5 +90,7 @@ export class PresenceService {
     if (sessions.size === 0) {
       this.presenceByDoc.delete(documentId);
     }
+
+    return expired;
   }
 }
