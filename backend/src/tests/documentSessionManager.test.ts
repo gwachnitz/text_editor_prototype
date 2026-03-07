@@ -179,6 +179,30 @@ test("load_range rejects invalid ranges", () => {
   assert.equal(err.message.includes("Invalid range"), true);
 });
 
+
+
+test("load_range rejects over-large ranges", () => {
+  const { manager } = createFixture();
+  const socket = new MockSocket();
+
+  manager.handleClientMessage(asSocket(socket), {
+    type: "join_document",
+    documentId: "doc-1",
+    clientId: "c-1",
+    displayName: "Alpha"
+  });
+
+  manager.handleClientMessage(asSocket(socket), {
+    type: "load_range",
+    documentId: "doc-1",
+    startOrderKeyInclusive: 0,
+    endOrderKeyExclusive: 1000
+  });
+
+  const err = message(socket, "error");
+  assert.equal(err.message.includes("Requested range too large"), true);
+});
+
 test("edit_block with stale base returns edit_rebased and invalid base returns reject/resync", () => {
   const { manager } = createFixture();
   const socket = new MockSocket();

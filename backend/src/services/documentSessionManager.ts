@@ -21,6 +21,8 @@ type SessionInfo = {
   clientId: string;
 };
 
+const MAX_RANGE_BLOCKS = 200;
+
 export class DocumentSessionManager {
   private readonly socketToSession = new Map<WebSocket, SessionInfo>();
 
@@ -108,6 +110,14 @@ export class DocumentSessionManager {
           this.send(socket, {
             type: "error",
             message: "Invalid range: endOrderKeyExclusive must be >= startOrderKeyInclusive"
+          });
+          return;
+        }
+
+        if (message.endOrderKeyExclusive - message.startOrderKeyInclusive > MAX_RANGE_BLOCKS) {
+          this.send(socket, {
+            type: "error",
+            message: `Requested range too large; max span is ${MAX_RANGE_BLOCKS}`
           });
           return;
         }

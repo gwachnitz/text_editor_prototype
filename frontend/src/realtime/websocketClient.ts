@@ -27,7 +27,12 @@ export class RealtimeClient {
       }
 
       if (this.onMessage) {
-        this.onMessage(message);
+        try {
+          this.onMessage(message);
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error("[ws] error in onMessage handler", error, message);
+        }
         return;
       }
 
