@@ -1,9 +1,17 @@
-import type { ClientToServerMessage, ServerToClientMessage } from "../types/protocol";
+import type {
+  ClientToServerMessage,
+  PresenceState,
+  ServerToClientMessage,
+  SubmittedOperation
+} from "../types/protocol";
 
 export class RealtimeClient {
   private socket?: WebSocket;
 
-  constructor(private readonly url: string) {}
+  constructor(
+    private readonly url: string,
+    private readonly onMessage?: (message: ServerToClientMessage) => void
+  ) {}
 
   connect(): void {
     this.socket = new WebSocket(this.url);
@@ -17,6 +25,17 @@ export class RealtimeClient {
         console.error("[ws] failed to parse message", error, event.data);
         return;
       }
+
+      if (this.onMessage) {
+        try {
+          this.onMessage(message);
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error("[ws] error in onMessage handler", error, message);
+        }
+        return;
+      }
+
       // eslint-disable-next-line no-console
       console.log("[ws] message", message);
     });
@@ -34,28 +53,25 @@ export class RealtimeClient {
     this.socket.send(JSON.stringify(message));
   }
 
-  joinDocument(params: { documentId: string; clientId: string }): void {
+  joinDocument(params: { documentId: string; clientId: string; displayName?: string }): void {
     const joinMessage: ClientToServerMessage = {
       type: "join_document",
       documentId: params.documentId,
-      clientId: params.clientId
+      clientId: params.clientId,
+      displayName: params.displayName
     };
 
-    // Retry sending for a limited number of attempts while the socket is
-    // still connecting, and stop if it is closed/closing.
-    const maxAttempts = 200; // 200 * 50ms = 10 seconds max retry window
+    const maxAttempts = 200;
     let attempts = 0;
 
     const trySend = () => {
       const socket = this.socket;
 
       if (!socket) {
-        // Socket no longer exists; stop retrying.
         return;
       }
 
       if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
-        // Connection is shutting down or closed; stop retrying.
         return;
       }
 
@@ -65,7 +81,6 @@ export class RealtimeClient {
       }
 
       if (attempts >= maxAttempts) {
-        // Give up after the maximum number of attempts to avoid unbounded polling.
         return;
       }
 
@@ -74,5 +89,29 @@ export class RealtimeClient {
     };
 
     trySend();
+  }
+
+  loadRange(params: {
+    documentId: string;
+    startOrderKeyInclusive: number;
+    endOrderKeyExclusive: number;
+  }): void {
+    this.send({ type: "load_range", ...params });
+  }
+
+  editBlock(params: { documentId: string; operation: SubmittedOperation }): void {
+    this.send({ type: "edit_block", ...params });
+  }
+
+  updatePresence(params: { documentId: string; clientId: string; presence: PresenceState }): void {
+    this.send({ type: "presence_update", ...params });
+  }
+
+  heartbeat(params: { documentId: string; clientId: string }): void {
+    this.send({ type: "heartbeat", ...params });
+  }
+
+  requestResync(params: { documentId: string; sinceSequence: number }): void {
+    this.send({ type: "request_resync", ...params });
   }
 }

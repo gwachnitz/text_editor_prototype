@@ -21,6 +21,7 @@ const presenceService = new PresenceService();
 seedDemoData(documentStore, blockStore);
 
 const sessionManager = new DocumentSessionManager({
+  blockStore,
   documentStore,
   operationLogStore,
   operationService,
