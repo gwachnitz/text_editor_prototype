@@ -139,7 +139,7 @@ test("load_range and edit_block dispatch expected protocol messages", () => {
       id: "op-1",
       blockId: "b-1",
       baseBlockVersion: 1,
-      payload: { type: "insert_text", offset: 5, text: "!" }
+      payload: { type: "replace_block", text: "hello!" }
     }
   });
 
@@ -203,7 +203,7 @@ test("load_range rejects over-large ranges", () => {
   assert.equal(err.message.includes("Requested range too large"), true);
 });
 
-test("edit_block with stale base returns edit_rebased and invalid base returns reject/resync", () => {
+test("edit_block with stale or invalid base returns reject/resync with authoritative state", () => {
   const { manager } = createFixture();
   const socket = new MockSocket();
 
@@ -221,7 +221,7 @@ test("edit_block with stale base returns edit_rebased and invalid base returns r
       id: "op-1",
       blockId: "b-1",
       baseBlockVersion: 1,
-      payload: { type: "insert_text", offset: 5, text: "!" }
+      payload: { type: "replace_block", text: "hello!" }
     }
   });
 
@@ -232,13 +232,14 @@ test("edit_block with stale base returns edit_rebased and invalid base returns r
       id: "op-2",
       blockId: "b-1",
       baseBlockVersion: 1,
-      payload: { type: "insert_text", offset: 6, text: "?" }
+      payload: { type: "replace_block", text: "hello!?" }
     }
   });
 
-  const rebased = message(socket, "edit_rebased");
-  assert.equal(rebased.operationId, "op-2");
-  assert.equal(rebased.serverBlockVersionAtApply, 2);
+  const staleRejected = message(socket, "edit_rejected");
+  assert.equal(staleRejected.operationId, "op-2");
+  assert.equal(staleRejected.authoritativeBlockVersion, 2);
+  assert.equal(staleRejected.authoritativeBlockText, "hello!");
 
   manager.handleClientMessage(asSocket(socket), {
     type: "edit_block",
@@ -253,6 +254,8 @@ test("edit_block with stale base returns edit_rebased and invalid base returns r
 
   const rejected = message(socket, "edit_rejected");
   assert.equal(rejected.operationId, "op-3");
+  assert.equal(rejected.authoritativeBlockVersion, 2);
+  assert.equal(rejected.authoritativeBlockText, "hello!");
 
   const resync = message(socket, "resync_required");
   assert.equal(resync.documentId, "doc-1");
