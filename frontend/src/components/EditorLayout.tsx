@@ -1,4 +1,4 @@
-import type { UIEvent } from "react";
+import { useRef, type UIEvent } from "react";
 import type { Block, PresenceSession, SequencingMetadata } from "../types/protocol";
 import type { ConnectionStatus } from "../realtime/websocketClient";
 
@@ -45,18 +45,24 @@ export function EditorLayout({
   onActiveBlockChange,
   onRequestResync
 }: Props): JSX.Element {
+  const wasNearTopRef = useRef(false);
+  const wasNearBottomRef = useRef(false);
+
   const handleBlocksScroll = (event: UIEvent<HTMLDivElement>): void => {
     const target = event.currentTarget;
     const nearTop = target.scrollTop <= 80;
     const nearBottom = target.scrollHeight - (target.scrollTop + target.clientHeight) <= 80;
 
-    if (nearTop) {
+    if (nearTop && !wasNearTopRef.current) {
       onBlocksScrollBoundary("up");
     }
 
-    if (nearBottom) {
+    if (nearBottom && !wasNearBottomRef.current) {
       onBlocksScrollBoundary("down");
     }
+
+    wasNearTopRef.current = nearTop;
+    wasNearBottomRef.current = nearBottom;
   };
 
   return (

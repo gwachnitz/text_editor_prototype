@@ -30,11 +30,16 @@ function createOperationId(): string {
   return crypto.randomUUID();
 }
 
+function toRangeKey(startOrderKeyInclusive: number, endOrderKeyExclusive: number): string {
+  return `${startOrderKeyInclusive}:${endOrderKeyExclusive}`;
+}
+
 export function DocumentPage({ documentId }: Props): JSX.Element {
   const identityRef = useRef<ClientIdentity>(createClientIdentity());
   const clientRef = useRef<RealtimeClient>();
   const stateRef = useRef(createInitialDocumentState(documentId));
   const pendingEditTimersRef = useRef<Record<string, number>>({});
+  const pendingRangeRequestsRef = useRef(new Set<string>());
   const [state, dispatch] = useReducer(documentReducer, documentId, createInitialDocumentState);
 
   stateRef.current = state;
@@ -43,6 +48,9 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
     () => Object.values(state.blocksById).sort((a, b) => a.orderKey - b.orderKey),
     [state.blocksById]
   );
+
+  const firstLoadedOrder = blocks[0]?.orderKey;
+  const lastLoadedOrder = blocks[blocks.length - 1]?.orderKey;
 
   const requestRange = (startOrderKeyInclusive: number, endOrderKeyExclusive: number): void => {
     const client = clientRef.current;
@@ -61,6 +69,12 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       return;
     }
 
+    const rangeKey = toRangeKey(clampedStart, clampedEnd);
+    if (pendingRangeRequestsRef.current.has(rangeKey)) {
+      return;
+    }
+
+    pendingRangeRequestsRef.current.add(rangeKey);
     client.loadRange({
       documentId,
       startOrderKeyInclusive: clampedStart,
@@ -73,19 +87,16 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       return;
     }
 
-    const ordered = Object.values(stateRef.current.blocksById).sort((a, b) => a.orderKey - b.orderKey);
-    if (ordered.length === 0) {
+    if (typeof firstLoadedOrder !== "number" || typeof lastLoadedOrder !== "number") {
       return;
     }
 
     if (direction === "up") {
-      const firstLoaded = ordered[0].orderKey;
-      requestRange(firstLoaded - RANGE_WINDOW, firstLoaded);
+      requestRange(firstLoadedOrder - RANGE_WINDOW, firstLoadedOrder);
       return;
     }
 
-    const lastLoaded = ordered[ordered.length - 1].orderKey;
-    requestRange(lastLoaded + 1, lastLoaded + 1 + RANGE_WINDOW);
+    requestRange(lastLoadedOrder + 1, lastLoadedOrder + 1 + RANGE_WINDOW);
   };
 
   const sendEdit = (blockId: string, text: string): void => {
@@ -112,6 +123,7 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
 
   useEffect(() => {
     dispatch({ kind: "reset_document", documentId });
+    pendingRangeRequestsRef.current.clear();
   }, [documentId]);
 
   useEffect(() => {
@@ -119,6 +131,15 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
 
     const client = new RealtimeClient(wsUrl, {
       onMessage: (message: ServerToClientMessage) => {
+        if (message.type === "range_data") {
+          const key = toRangeKey(message.startOrderKeyInclusive, message.endOrderKeyExclusive);
+          pendingRangeRequestsRef.current.delete(key);
+        }
+
+        if (message.type === "error" || message.type === "resync_required") {
+          pendingRangeRequestsRef.current.clear();
+        }
+
         dispatch({ kind: "server_message", message });
 
         if (message.type === "resync_required") {
@@ -153,6 +174,7 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
         window.clearTimeout(timer);
       }
       pendingEditTimersRef.current = {};
+      pendingRangeRequestsRef.current.clear();
       window.clearInterval(heartbeatInterval);
       client.disconnect();
       clientRef.current = undefined;
@@ -230,9 +252,6 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       sinceSequence: state.sequencing.latestSequence
     });
   };
-
-  const firstLoadedOrder = blocks[0]?.orderKey;
-  const lastLoadedOrder = blocks[blocks.length - 1]?.orderKey;
 
   return (
     <EditorLayout
