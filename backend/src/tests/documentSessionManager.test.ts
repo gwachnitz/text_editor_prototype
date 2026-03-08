@@ -90,6 +90,8 @@ test("join_document returns metadata/presence and notifies collaborators", () =>
   const joined = message(second, "document_joined");
   assert.equal(joined.documentId, "doc-1");
   assert.equal(joined.document.title, "Protocol doc");
+  assert.equal(joined.totalBlocks, 2);
+  assert.deepEqual(joined.initialRange, { startOrderKeyInclusive: 0, endOrderKeyExclusive: 20 });
   assert.equal(joined.sequencing.latestSequence, 0);
 
   const state = message(second, "presence_state");

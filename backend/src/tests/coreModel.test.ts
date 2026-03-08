@@ -46,6 +46,21 @@ test("BlockStore retrieves blocks by order range", () => {
   );
 });
 
+
+
+test("BlockStore reports document block counts", () => {
+  const store = new BlockStore();
+  const blocks: Block[] = [
+    { id: "b1", documentId: "d1", orderKey: 0, text: "a", version: 1, updatedAt: 1 },
+    { id: "b2", documentId: "d1", orderKey: 1, text: "b", version: 1, updatedAt: 1 }
+  ];
+
+  store.setDocumentBlocks("d1", blocks);
+
+  assert.equal(store.getDocumentBlockCount("d1"), 2);
+  assert.equal(store.getDocumentBlockCount("d-missing"), 0);
+});
+
 test("OperationService accepts exact base versions and rejects stale/future versions", () => {
   const documentStore = new DocumentStore();
   const blockStore = new BlockStore();

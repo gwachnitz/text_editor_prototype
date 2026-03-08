@@ -23,6 +23,7 @@ type SessionInfo = {
 };
 
 const MAX_RANGE_BLOCKS = 200;
+const INITIAL_LOAD_BLOCKS = 20;
 
 export class DocumentSessionManager {
   private readonly socketToSession = new Map<WebSocket, SessionInfo>();
@@ -72,9 +73,10 @@ export class DocumentSessionManager {
           type: "document_joined",
           documentId: session.documentId,
           document,
+          totalBlocks: this.deps.blockStore.getDocumentBlockCount(session.documentId),
           initialRange: {
             startOrderKeyInclusive: 0,
-            endOrderKeyExclusive: 50
+            endOrderKeyExclusive: INITIAL_LOAD_BLOCKS
           },
           presenceState: this.deps.presenceService.list(session.documentId),
           sequencing: this.getSequencing(session.documentId)

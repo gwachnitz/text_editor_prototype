@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer, useRef } from "react";
 import { EditorLayout } from "../components/EditorLayout";
 import { RealtimeClient, type ConnectionStatus } from "../realtime/websocketClient";
 import type { Block, ServerToClientMessage } from "../types/protocol";
-import { createInitialDocumentState, documentReducer } from "./documentState";
+import { createInitialDocumentState, documentReducer, isRangeLoaded } from "./documentState";
 
 type Props = {
   documentId: string;
@@ -10,6 +10,8 @@ type Props = {
 
 const HEARTBEAT_INTERVAL_MS = 5000;
 const EDIT_DEBOUNCE_MS = 200;
+const RANGE_WINDOW = 20;
+const NEARBY_BUFFER = 10;
 
 type ClientIdentity = {
   clientId: string;
@@ -41,6 +43,50 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
     () => Object.values(state.blocksById).sort((a, b) => a.orderKey - b.orderKey),
     [state.blocksById]
   );
+
+  const requestRange = (startOrderKeyInclusive: number, endOrderKeyExclusive: number): void => {
+    const client = clientRef.current;
+    if (!client) {
+      return;
+    }
+
+    const clampedStart = Math.max(0, startOrderKeyInclusive);
+    const clampedEnd = Math.max(clampedStart, Math.min(endOrderKeyExclusive, stateRef.current.totalBlocks));
+
+    if (clampedEnd <= clampedStart) {
+      return;
+    }
+
+    if (isRangeLoaded(stateRef.current.loadedRanges, clampedStart, clampedEnd)) {
+      return;
+    }
+
+    client.loadRange({
+      documentId,
+      startOrderKeyInclusive: clampedStart,
+      endOrderKeyExclusive: clampedEnd
+    });
+  };
+
+  const requestAdjacentRange = (direction: "up" | "down"): void => {
+    if (stateRef.current.totalBlocks === 0) {
+      return;
+    }
+
+    const ordered = Object.values(stateRef.current.blocksById).sort((a, b) => a.orderKey - b.orderKey);
+    if (ordered.length === 0) {
+      return;
+    }
+
+    if (direction === "up") {
+      const firstLoaded = ordered[0].orderKey;
+      requestRange(firstLoaded - RANGE_WINDOW, firstLoaded);
+      return;
+    }
+
+    const lastLoaded = ordered[ordered.length - 1].orderKey;
+    requestRange(lastLoaded + 1, lastLoaded + 1 + RANGE_WINDOW);
+  };
 
   const sendEdit = (blockId: string, text: string): void => {
     const client = clientRef.current;
@@ -118,11 +164,10 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       return;
     }
 
-    clientRef.current.loadRange({
-      documentId,
-      startOrderKeyInclusive: state.initialRange.startOrderKeyInclusive,
-      endOrderKeyExclusive: state.initialRange.endOrderKeyExclusive
-    });
+    requestRange(
+      state.initialRange.startOrderKeyInclusive,
+      state.initialRange.endOrderKeyExclusive
+    );
   }, [documentId, state.initialRange]);
 
   const handleBlockChange = (block: Block, text: string): void => {
@@ -155,6 +200,14 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       return;
     }
 
+    const activeBlock = blockId ? stateRef.current.blocksById[blockId] : undefined;
+    if (activeBlock) {
+      requestRange(
+        activeBlock.orderKey - NEARBY_BUFFER,
+        activeBlock.orderKey + NEARBY_BUFFER + 1
+      );
+    }
+
     client.updatePresence({
       documentId,
       clientId: identityRef.current.clientId,
@@ -178,6 +231,9 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
     });
   };
 
+  const firstLoadedOrder = blocks[0]?.orderKey;
+  const lastLoadedOrder = blocks[blocks.length - 1]?.orderKey;
+
   return (
     <EditorLayout
       documentId={documentId}
@@ -188,6 +244,16 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       blocks={blocks}
       sequencing={state.sequencing}
       recentEvents={state.recentEvents}
+      loadedBlockCount={blocks.length}
+      totalBlocks={state.totalBlocks}
+      canLoadPrevious={typeof firstLoadedOrder === "number" && firstLoadedOrder > 0}
+      canLoadNext={
+        typeof lastLoadedOrder === "number" &&
+        lastLoadedOrder < Math.max(0, state.totalBlocks - 1)
+      }
+      onLoadPrevious={() => requestAdjacentRange("up")}
+      onLoadNext={() => requestAdjacentRange("down")}
+      onBlocksScrollBoundary={(direction) => requestAdjacentRange(direction)}
       onBlockChange={handleBlockChange}
       onBlockCommit={handleBlockCommit}
       onActiveBlockChange={handleActiveBlockChange}

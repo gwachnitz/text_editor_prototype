@@ -59,6 +59,7 @@ export type ServerToClientMessage =
       type: "document_joined";
       documentId: string;
       document: Document;
+      totalBlocks: number;
       initialRange: {
         startOrderKeyInclusive: number;
         endOrderKeyExclusive: number;
