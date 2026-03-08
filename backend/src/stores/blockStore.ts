@@ -11,6 +11,10 @@ export class BlockStore {
     this.blocksByDoc.set(documentId, byId);
   }
 
+  getDocumentBlockCount(documentId: string): number {
+    return this.blocksByDoc.get(documentId)?.size ?? 0;
+  }
+
   getDocumentBlocks(documentId: string): Block[] {
     return [...(this.blocksByDoc.get(documentId)?.values() ?? [])].sort(
       (a, b) => a.orderKey - b.orderKey

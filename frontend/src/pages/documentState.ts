@@ -8,6 +8,11 @@ import type { ConnectionStatus } from "../realtime/websocketClient";
 
 const MAX_RECENT_EVENTS = 12;
 
+type LoadedRange = {
+  startOrderKeyInclusive: number;
+  endOrderKeyExclusive: number;
+};
+
 export type DocumentState = {
   documentId: string;
   documentTitle: string;
@@ -15,10 +20,9 @@ export type DocumentState = {
   blocksById: Record<string, Block>;
   presence: PresenceSession[];
   sequencing: SequencingMetadata;
-  initialRange?: {
-    startOrderKeyInclusive: number;
-    endOrderKeyExclusive: number;
-  };
+  totalBlocks: number;
+  initialRange?: LoadedRange;
+  loadedRanges: LoadedRange[];
   recentEvents: string[];
 };
 
@@ -36,6 +40,8 @@ export function createInitialDocumentState(documentId: string): DocumentState {
     blocksById: {},
     presence: [],
     sequencing: { latestSequence: 0, latestSnapshotVersion: 0 },
+    totalBlocks: 0,
+    loadedRanges: [],
     recentEvents: []
   };
 }
@@ -43,6 +49,25 @@ export function createInitialDocumentState(documentId: string): DocumentState {
 function recordEvent(state: DocumentState, label: string): string[] {
   const events = [`${new Date().toLocaleTimeString()} ${label}`, ...state.recentEvents];
   return events.slice(0, MAX_RECENT_EVENTS);
+}
+
+function mergeRanges(ranges: LoadedRange[], nextRange: LoadedRange): LoadedRange[] {
+  const normalized = [...ranges, nextRange].sort(
+    (left, right) => left.startOrderKeyInclusive - right.startOrderKeyInclusive
+  );
+
+  const merged: LoadedRange[] = [];
+  for (const range of normalized) {
+    const previous = merged[merged.length - 1];
+    if (!previous || range.startOrderKeyInclusive > previous.endOrderKeyExclusive) {
+      merged.push({ ...range });
+      continue;
+    }
+
+    previous.endOrderKeyExclusive = Math.max(previous.endOrderKeyExclusive, range.endOrderKeyExclusive);
+  }
+
+  return merged;
 }
 
 export function documentReducer(state: DocumentState, action: DocumentAction): DocumentState {
@@ -87,10 +112,11 @@ export function documentReducer(state: DocumentState, action: DocumentAction): D
       return {
         ...state,
         documentTitle: message.document.title,
+        totalBlocks: message.totalBlocks,
         initialRange: message.initialRange,
         presence: message.presenceState,
         sequencing: message.sequencing,
-        recentEvents: recordEvent(state, "document_joined")
+        recentEvents: recordEvent(state, `document_joined:total=${message.totalBlocks}`)
       };
     }
     case "range_data": {
@@ -101,7 +127,14 @@ export function documentReducer(state: DocumentState, action: DocumentAction): D
       return {
         ...state,
         blocksById,
-        recentEvents: recordEvent(state, `range_data:${message.blocks.length}`)
+        loadedRanges: mergeRanges(state.loadedRanges, {
+          startOrderKeyInclusive: message.startOrderKeyInclusive,
+          endOrderKeyExclusive: message.endOrderKeyExclusive
+        }),
+        recentEvents: recordEvent(
+          state,
+          `range_data:${message.blocks.length} [${message.startOrderKeyInclusive},${message.endOrderKeyExclusive})`
+        )
       };
     }
     case "block_updated": {
@@ -193,4 +226,16 @@ export function documentReducer(state: DocumentState, action: DocumentAction): D
     default:
       return state;
   }
+}
+
+export function isRangeLoaded(
+  loadedRanges: LoadedRange[],
+  startOrderKeyInclusive: number,
+  endOrderKeyExclusive: number
+): boolean {
+  return loadedRanges.some(
+    (range) =>
+      range.startOrderKeyInclusive <= startOrderKeyInclusive &&
+      range.endOrderKeyExclusive >= endOrderKeyExclusive
+  );
 }
