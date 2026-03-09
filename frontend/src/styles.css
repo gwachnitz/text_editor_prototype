@@ -12,6 +12,26 @@ body {
   margin: 0;
 }
 
+.doc-switcher {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 0;
+}
+
+.doc-switcher button {
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.doc-switcher button.active {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+
 .editor-shell {
   min-height: 100vh;
   padding: 1rem;
