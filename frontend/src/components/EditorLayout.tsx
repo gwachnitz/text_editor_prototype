@@ -50,37 +50,52 @@ export function EditorLayout({
 
   const unifiedText = useMemo(() => blocks.map((block) => block.text).join("\n"), [blocks]);
 
-  const findBlockAtPosition = (position: number): Block | undefined => {
-    let cursor = 0;
-
-    for (let index = 0; index < blocks.length; index += 1) {
-      const block = blocks[index];
-      const end = cursor + block.text.length;
-
-      if (position <= end || index === blocks.length - 1) {
-        return block;
-      }
-
-      cursor = end + 1;
+  const mapTextToBlockTexts = (text: string): string[] => {
+    if (blocks.length === 0) {
+      return [];
     }
 
-    return undefined;
+    const lines = text.split("\n");
+    const fixedBlocks = Math.max(0, blocks.length - 1);
+    const headLines = lines.slice(0, fixedBlocks);
+
+    while (headLines.length < fixedBlocks) {
+      headLines.push("");
+    }
+
+    const tailText = lines.slice(fixedBlocks).join("\n");
+    return [...headLines, tailText];
+  };
+
+  const findBlockAtPosition = (position: number, text: string): Block | undefined => {
+    if (blocks.length === 0) {
+      return undefined;
+    }
+
+    const clampedPosition = Math.max(0, Math.min(position, text.length));
+    const separatorsToFind = Math.max(0, blocks.length - 1);
+    const separatorIndices: number[] = [];
+
+    for (let index = 0; index < text.length && separatorIndices.length < separatorsToFind; index += 1) {
+      if (text[index] === "\n") {
+        separatorIndices.push(index);
+      }
+    }
+
+    for (let blockIndex = 0; blockIndex < separatorIndices.length; blockIndex += 1) {
+      if (clampedPosition <= separatorIndices[blockIndex]) {
+        return blocks[blockIndex];
+      }
+    }
+
+    return blocks[blocks.length - 1];
   };
 
   const applyUnifiedTextChange = (nextText: string): void => {
-    const nextLines = nextText.split("\n");
-
-    if (nextLines.length < blocks.length) {
-      while (nextLines.length < blocks.length) {
-        nextLines.push("");
-      }
-    } else if (nextLines.length > blocks.length && blocks.length > 0) {
-      const overflow = nextLines.splice(blocks.length - 1);
-      nextLines.push(overflow.join("\n"));
-    }
+    const nextBlockTexts = mapTextToBlockTexts(nextText);
 
     blocks.forEach((block, index) => {
-      const nextBlockText = nextLines[index] ?? "";
+      const nextBlockText = nextBlockTexts[index] ?? "";
       if (nextBlockText !== block.text) {
         onBlockChange(block, nextBlockText);
       }
@@ -88,19 +103,10 @@ export function EditorLayout({
   };
 
   const commitUnifiedText = (nextText: string): void => {
-    const nextLines = nextText.split("\n");
-
-    if (nextLines.length < blocks.length) {
-      while (nextLines.length < blocks.length) {
-        nextLines.push("");
-      }
-    } else if (nextLines.length > blocks.length && blocks.length > 0) {
-      const overflow = nextLines.splice(blocks.length - 1);
-      nextLines.push(overflow.join("\n"));
-    }
+    const nextBlockTexts = mapTextToBlockTexts(nextText);
 
     blocks.forEach((block, index) => {
-      const nextBlockText = nextLines[index] ?? "";
+      const nextBlockText = nextBlockTexts[index] ?? "";
       if (nextBlockText !== block.text) {
         onBlockCommit(block, nextBlockText);
       }
@@ -172,13 +178,16 @@ export function EditorLayout({
               <textarea
                 className="editor-textarea unified-editor-textarea"
                 value={unifiedText}
-                onFocus={() => onActiveBlockChange(blocks[0]?.id)}
+                onFocus={(event) => {
+                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0, event.currentTarget.value);
+                  onActiveBlockChange(activeBlock?.id);
+                }}
                 onClick={(event) => {
-                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0);
+                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0, event.currentTarget.value);
                   onActiveBlockChange(activeBlock?.id);
                 }}
                 onKeyUp={(event) => {
-                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0);
+                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0, event.currentTarget.value);
                   onActiveBlockChange(activeBlock?.id);
                 }}
                 onBlur={(event) => {
