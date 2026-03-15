@@ -1,4 +1,4 @@
-import { useRef, type UIEvent } from "react";
+import { useMemo, useRef, type UIEvent } from "react";
 import type { Block, PresenceSession, SequencingMetadata } from "../types/protocol";
 import type { ConnectionStatus } from "../realtime/websocketClient";
 
@@ -48,6 +48,65 @@ export function EditorLayout({
   const wasNearTopRef = useRef(false);
   const wasNearBottomRef = useRef(false);
 
+  const unifiedText = useMemo(() => blocks.map((block) => block.text).join("\n"), [blocks]);
+
+  const findBlockAtPosition = (position: number): Block | undefined => {
+    let cursor = 0;
+
+    for (let index = 0; index < blocks.length; index += 1) {
+      const block = blocks[index];
+      const end = cursor + block.text.length;
+
+      if (position <= end || index === blocks.length - 1) {
+        return block;
+      }
+
+      cursor = end + 1;
+    }
+
+    return undefined;
+  };
+
+  const applyUnifiedTextChange = (nextText: string): void => {
+    const nextLines = nextText.split("\n");
+
+    if (nextLines.length < blocks.length) {
+      while (nextLines.length < blocks.length) {
+        nextLines.push("");
+      }
+    } else if (nextLines.length > blocks.length && blocks.length > 0) {
+      const overflow = nextLines.splice(blocks.length - 1);
+      nextLines.push(overflow.join("\n"));
+    }
+
+    blocks.forEach((block, index) => {
+      const nextBlockText = nextLines[index] ?? "";
+      if (nextBlockText !== block.text) {
+        onBlockChange(block, nextBlockText);
+      }
+    });
+  };
+
+  const commitUnifiedText = (nextText: string): void => {
+    const nextLines = nextText.split("\n");
+
+    if (nextLines.length < blocks.length) {
+      while (nextLines.length < blocks.length) {
+        nextLines.push("");
+      }
+    } else if (nextLines.length > blocks.length && blocks.length > 0) {
+      const overflow = nextLines.splice(blocks.length - 1);
+      nextLines.push(overflow.join("\n"));
+    }
+
+    blocks.forEach((block, index) => {
+      const nextBlockText = nextLines[index] ?? "";
+      if (nextBlockText !== block.text) {
+        onBlockCommit(block, nextBlockText);
+      }
+    });
+  };
+
   const handleBlocksScroll = (event: UIEvent<HTMLDivElement>): void => {
     const target = event.currentTarget;
     const nearTop = target.scrollTop <= 80;
@@ -95,7 +154,7 @@ export function EditorLayout({
         </aside>
 
         <section className="panel">
-          <h2>Blocks</h2>
+          <h2>Editor</h2>
           <p className="meta-row">
             Loaded {loadedBlockCount} / {totalBlocks} blocks
           </p>
@@ -109,23 +168,26 @@ export function EditorLayout({
           </div>
           <div className="blocks" onScroll={handleBlocksScroll}>
             {blocks.length === 0 && <p>Waiting for block data…</p>}
-            {blocks.map((block) => (
-              <label className="block-item" key={block.id}>
-                <span className="meta-row">
-                  {block.id} • order:{block.orderKey} • version:{block.version}
-                </span>
-                <textarea
-                  className="editor-textarea"
-                  value={block.text}
-                  onFocus={() => onActiveBlockChange(block.id)}
-                  onBlur={(event) => {
-                    onActiveBlockChange(undefined);
-                    onBlockCommit(block, event.currentTarget.value);
-                  }}
-                  onChange={(event) => onBlockChange(block, event.target.value)}
-                />
-              </label>
-            ))}
+            {blocks.length > 0 && (
+              <textarea
+                className="editor-textarea unified-editor-textarea"
+                value={unifiedText}
+                onFocus={() => onActiveBlockChange(blocks[0]?.id)}
+                onClick={(event) => {
+                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0);
+                  onActiveBlockChange(activeBlock?.id);
+                }}
+                onKeyUp={(event) => {
+                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0);
+                  onActiveBlockChange(activeBlock?.id);
+                }}
+                onBlur={(event) => {
+                  onActiveBlockChange(undefined);
+                  commitUnifiedText(event.currentTarget.value);
+                }}
+                onChange={(event) => applyUnifiedTextChange(event.target.value)}
+              />
+            )}
           </div>
         </section>
 
