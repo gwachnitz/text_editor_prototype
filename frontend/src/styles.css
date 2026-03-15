@@ -93,6 +93,11 @@ body {
   gap: 0.35rem;
 }
 
+.unified-editor-textarea {
+  min-height: 68vh;
+  line-height: 1.5;
+}
+
 .connection-pill {
   display: inline-block;
   border: 1px solid #cbd5e1;
