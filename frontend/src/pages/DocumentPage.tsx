@@ -148,7 +148,10 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
           pendingRangeRequestsRef.current.clear();
         }
 
-        if (message.type === "edit_accepted" || message.type === "edit_rebased") {
+        if (
+          (message.type === "edit_accepted" || message.type === "edit_rebased") &&
+          message.documentId === documentId
+        ) {
           const pendingOperation = pendingOperationsRef.current.get(message.operationId);
           if (pendingOperation) {
             dispatch({
@@ -160,13 +163,20 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
           }
         }
 
-        if (message.type === "edit_rejected") {
+        if (message.type === "edit_rejected" && message.documentId === documentId) {
           pendingOperationsRef.current.delete(message.operationId);
         }
 
         dispatch({ kind: "server_message", message });
 
         if (message.type === "resync_required") {
+          for (const timer of Object.values(pendingEditTimersRef.current)) {
+            window.clearTimeout(timer);
+          }
+          pendingEditTimersRef.current = {};
+          pendingRangeRequestsRef.current.clear();
+          pendingOperationsRef.current.clear();
+
           dispatch({ kind: "reset_document", documentId });
           client.joinDocument({
             documentId,
