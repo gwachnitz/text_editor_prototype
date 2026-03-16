@@ -24,6 +24,12 @@ type Props = {
   onRequestResync: () => void;
 };
 
+type UnifiedDiff = {
+  start: number;
+  previousEnd: number;
+  nextEnd: number;
+};
+
 export function EditorLayout({
   documentId,
   documentTitle,
@@ -47,70 +53,107 @@ export function EditorLayout({
 }: Props): JSX.Element {
   const wasNearTopRef = useRef(false);
   const wasNearBottomRef = useRef(false);
+  const lastAnnouncedBlockIdRef = useRef<string>();
 
   const unifiedText = useMemo(() => blocks.map((block) => block.text).join("\n"), [blocks]);
 
-  const mapTextToBlockTexts = (text: string): string[] => {
+  const getBlockStartOffset = (blockIndex: number): number => {
+    let offset = 0;
+
+    for (let index = 0; index < blockIndex; index += 1) {
+      offset += blocks[index].text.length;
+      offset += 1;
+    }
+
+    return offset;
+  };
+
+  const findBlockIndexAtPosition = (position: number): number => {
     if (blocks.length === 0) {
-      return [];
+      return -1;
     }
 
-    const lines = text.split("\n");
-    const fixedBlocks = Math.max(0, blocks.length - 1);
-    const headLines = lines.slice(0, fixedBlocks);
+    const clampedPosition = Math.max(0, Math.min(position, unifiedText.length));
+    let cursor = 0;
 
-    while (headLines.length < fixedBlocks) {
-      headLines.push("");
+    for (let index = 0; index < blocks.length; index += 1) {
+      const block = blocks[index];
+      const blockEnd = cursor + block.text.length;
+
+      if (clampedPosition <= blockEnd || index === blocks.length - 1) {
+        return index;
+      }
+
+      cursor = blockEnd + 1;
     }
 
-    const tailText = lines.slice(fixedBlocks).join("\n");
-    return [...headLines, tailText];
+    return blocks.length - 1;
   };
 
-  const findBlockAtPosition = (position: number, text: string): Block | undefined => {
-    if (blocks.length === 0) {
-      return undefined;
+  const findDiff = (previousText: string, nextText: string): UnifiedDiff => {
+    const minLength = Math.min(previousText.length, nextText.length);
+    let start = 0;
+
+    while (start < minLength && previousText[start] === nextText[start]) {
+      start += 1;
     }
 
-    const clampedPosition = Math.max(0, Math.min(position, text.length));
-    const separatorsToFind = Math.max(0, blocks.length - 1);
-    const separatorIndices: number[] = [];
+    let previousEnd = previousText.length;
+    let nextEnd = nextText.length;
 
-    for (let index = 0; index < text.length && separatorIndices.length < separatorsToFind; index += 1) {
-      if (text[index] === "\n") {
-        separatorIndices.push(index);
-      }
+    while (
+      previousEnd > start &&
+      nextEnd > start &&
+      previousText[previousEnd - 1] === nextText[nextEnd - 1]
+    ) {
+      previousEnd -= 1;
+      nextEnd -= 1;
     }
 
-    for (let blockIndex = 0; blockIndex < separatorIndices.length; blockIndex += 1) {
-      if (clampedPosition <= separatorIndices[blockIndex]) {
-        return blocks[blockIndex];
-      }
-    }
-
-    return blocks[blocks.length - 1];
+    return { start, previousEnd, nextEnd };
   };
 
-  const applyUnifiedTextChange = (nextText: string): void => {
-    const nextBlockTexts = mapTextToBlockTexts(nextText);
+  const emitUnifiedEdit = (
+    nextText: string,
+    emitChange: (block: Block, text: string) => void
+  ): void => {
+    if (nextText === unifiedText || blocks.length === 0) {
+      return;
+    }
 
-    blocks.forEach((block, index) => {
-      const nextBlockText = nextBlockTexts[index] ?? "";
-      if (nextBlockText !== block.text) {
-        onBlockChange(block, nextBlockText);
-      }
-    });
+    const diff = findDiff(unifiedText, nextText);
+    const blockIndex = findBlockIndexAtPosition(diff.start);
+    if (blockIndex < 0) {
+      return;
+    }
+
+    const block = blocks[blockIndex];
+    const blockStart = getBlockStartOffset(blockIndex);
+
+    const localStart = Math.max(0, Math.min(diff.start - blockStart, block.text.length));
+    const localPreviousEnd = Math.max(
+      localStart,
+      Math.min(diff.previousEnd - blockStart, block.text.length)
+    );
+    const replacement = nextText.slice(diff.start, diff.nextEnd);
+    const nextBlockText =
+      block.text.slice(0, localStart) + replacement + block.text.slice(localPreviousEnd);
+
+    if (nextBlockText !== block.text) {
+      emitChange(block, nextBlockText);
+    }
   };
 
-  const commitUnifiedText = (nextText: string): void => {
-    const nextBlockTexts = mapTextToBlockTexts(nextText);
+  const updateActiveBlock = (position: number): void => {
+    const blockIndex = findBlockIndexAtPosition(position);
+    const nextBlockId = blockIndex >= 0 ? blocks[blockIndex]?.id : undefined;
 
-    blocks.forEach((block, index) => {
-      const nextBlockText = nextBlockTexts[index] ?? "";
-      if (nextBlockText !== block.text) {
-        onBlockCommit(block, nextBlockText);
-      }
-    });
+    if (lastAnnouncedBlockIdRef.current === nextBlockId) {
+      return;
+    }
+
+    lastAnnouncedBlockIdRef.current = nextBlockId;
+    onActiveBlockChange(nextBlockId);
   };
 
   const handleBlocksScroll = (event: UIEvent<HTMLDivElement>): void => {
@@ -178,23 +221,32 @@ export function EditorLayout({
               <textarea
                 className="editor-textarea unified-editor-textarea"
                 value={unifiedText}
-                onFocus={(event) => {
-                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0, event.currentTarget.value);
-                  onActiveBlockChange(activeBlock?.id);
-                }}
-                onClick={(event) => {
-                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0, event.currentTarget.value);
-                  onActiveBlockChange(activeBlock?.id);
-                }}
-                onKeyUp={(event) => {
-                  const activeBlock = findBlockAtPosition(event.currentTarget.selectionStart ?? 0, event.currentTarget.value);
-                  onActiveBlockChange(activeBlock?.id);
-                }}
+                onFocus={(event) => updateActiveBlock(event.currentTarget.selectionStart ?? 0)}
+                onClick={(event) => updateActiveBlock(event.currentTarget.selectionStart ?? 0)}
+                onKeyUp={(event) => updateActiveBlock(event.currentTarget.selectionStart ?? 0)}
                 onBlur={(event) => {
+                  lastAnnouncedBlockIdRef.current = undefined;
                   onActiveBlockChange(undefined);
-                  commitUnifiedText(event.currentTarget.value);
+                  emitUnifiedEdit(event.currentTarget.value, onBlockCommit);
                 }}
-                onChange={(event) => applyUnifiedTextChange(event.target.value)}
+                onChange={(event) => emitUnifiedEdit(event.target.value, onBlockChange)}
+                onScroll={(event) => {
+                  const target = event.currentTarget;
+                  const nearTop = target.scrollTop <= 80;
+                  const nearBottom =
+                    target.scrollHeight - (target.scrollTop + target.clientHeight) <= 80;
+
+                  if (nearTop && !wasNearTopRef.current) {
+                    onBlocksScrollBoundary("up");
+                  }
+
+                  if (nearBottom && !wasNearBottomRef.current) {
+                    onBlocksScrollBoundary("down");
+                  }
+
+                  wasNearTopRef.current = nearTop;
+                  wasNearBottomRef.current = nearBottom;
+                }}
               />
             )}
           </div>
