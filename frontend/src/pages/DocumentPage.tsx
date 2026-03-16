@@ -38,6 +38,34 @@ function toRangeKey(startOrderKeyInclusive: number, endOrderKeyExclusive: number
   return `${startOrderKeyInclusive}:${endOrderKeyExclusive}`;
 }
 
+function resolveWebSocketUrl(rawValue: string | undefined): string {
+  if (!rawValue || rawValue.trim().length === 0) {
+    return "ws://localhost:3001/ws";
+  }
+
+  const trimmedValue = rawValue.trim();
+  const fallbackBase = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmedValue, fallbackBase);
+  } catch {
+    return "ws://localhost:3001/ws";
+  }
+
+  if (parsed.protocol === "http:") {
+    parsed.protocol = "ws:";
+  } else if (parsed.protocol === "https:") {
+    parsed.protocol = "wss:";
+  }
+
+  if (parsed.pathname === "/" || parsed.pathname.length === 0) {
+    parsed.pathname = "/ws";
+  }
+
+  return parsed.toString();
+}
+
 export function DocumentPage({ documentId }: Props): JSX.Element {
   const identityRef = useRef<ClientIdentity>(createClientIdentity());
   const clientRef = useRef<RealtimeClient>();
@@ -135,7 +163,7 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
   }, [documentId]);
 
   useEffect(() => {
-    const wsUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:3001/ws";
+    const wsUrl = resolveWebSocketUrl(import.meta.env.VITE_WS_URL);
 
     const client = new RealtimeClient(wsUrl, {
       onMessage: (message: ServerToClientMessage) => {
