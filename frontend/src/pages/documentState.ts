@@ -30,7 +30,8 @@ export type DocumentAction =
   | { kind: "server_message"; message: ServerToClientMessage }
   | { kind: "connection_status"; status: ConnectionStatus }
   | { kind: "reset_document"; documentId: string }
-  | { kind: "optimistic_block_text"; blockId: string; text: string };
+  | { kind: "optimistic_block_text"; blockId: string; text: string }
+  | { kind: "acknowledge_block_version"; blockId: string; version: number };
 
 export function createInitialDocumentState(documentId: string): DocumentState {
   return {
@@ -96,6 +97,24 @@ export function documentReducer(state: DocumentState, action: DocumentAction): D
         [action.blockId]: {
           ...currentBlock,
           text: action.text
+        }
+      }
+    };
+  }
+
+  if (action.kind === "acknowledge_block_version") {
+    const currentBlock = state.blocksById[action.blockId];
+    if (!currentBlock) {
+      return state;
+    }
+
+    return {
+      ...state,
+      blocksById: {
+        ...state.blocksById,
+        [action.blockId]: {
+          ...currentBlock,
+          version: Math.max(currentBlock.version, action.version)
         }
       }
     };

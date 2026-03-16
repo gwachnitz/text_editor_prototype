@@ -18,6 +18,10 @@ type ClientIdentity = {
   displayName: string;
 };
 
+type PendingOperation = {
+  blockId: string;
+};
+
 function createClientIdentity(): ClientIdentity {
   const seed = Math.random().toString(36).slice(2, 8);
   return {
@@ -40,6 +44,7 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
   const stateRef = useRef(createInitialDocumentState(documentId));
   const pendingEditTimersRef = useRef<Record<string, number>>({});
   const pendingRangeRequestsRef = useRef(new Set<string>());
+  const pendingOperationsRef = useRef(new Map<string, PendingOperation>());
   const [state, dispatch] = useReducer(documentReducer, documentId, createInitialDocumentState);
 
   stateRef.current = state;
@@ -107,10 +112,13 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       return;
     }
 
+    const operationId = createOperationId();
+    pendingOperationsRef.current.set(operationId, { blockId });
+
     client.editBlock({
       documentId,
       operation: {
-        id: createOperationId(),
+        id: operationId,
         blockId,
         baseBlockVersion: currentBlock.version,
         payload: {
@@ -140,9 +148,35 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
           pendingRangeRequestsRef.current.clear();
         }
 
+        if (
+          (message.type === "edit_accepted" || message.type === "edit_rebased") &&
+          message.documentId === documentId
+        ) {
+          const pendingOperation = pendingOperationsRef.current.get(message.operationId);
+          if (pendingOperation) {
+            dispatch({
+              kind: "acknowledge_block_version",
+              blockId: pendingOperation.blockId,
+              version: message.appliedBlockVersion
+            });
+            pendingOperationsRef.current.delete(message.operationId);
+          }
+        }
+
+        if (message.type === "edit_rejected" && message.documentId === documentId) {
+          pendingOperationsRef.current.delete(message.operationId);
+        }
+
         dispatch({ kind: "server_message", message });
 
         if (message.type === "resync_required") {
+          for (const timer of Object.values(pendingEditTimersRef.current)) {
+            window.clearTimeout(timer);
+          }
+          pendingEditTimersRef.current = {};
+          pendingRangeRequestsRef.current.clear();
+          pendingOperationsRef.current.clear();
+
           dispatch({ kind: "reset_document", documentId });
           client.joinDocument({
             documentId,
@@ -175,6 +209,7 @@ export function DocumentPage({ documentId }: Props): JSX.Element {
       }
       pendingEditTimersRef.current = {};
       pendingRangeRequestsRef.current.clear();
+      pendingOperationsRef.current.clear();
       window.clearInterval(heartbeatInterval);
       client.disconnect();
       clientRef.current = undefined;
