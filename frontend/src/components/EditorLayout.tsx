@@ -1,4 +1,4 @@
-import { useRef, type UIEvent } from "react";
+import { useMemo, useRef, type UIEvent } from "react";
 import type { Block, PresenceSession, SequencingMetadata } from "../types/protocol";
 import type { ConnectionStatus } from "../realtime/websocketClient";
 
@@ -24,6 +24,12 @@ type Props = {
   onRequestResync: () => void;
 };
 
+type UnifiedDiff = {
+  start: number;
+  previousEnd: number;
+  nextEnd: number;
+};
+
 export function EditorLayout({
   documentId,
   documentTitle,
@@ -47,6 +53,108 @@ export function EditorLayout({
 }: Props): JSX.Element {
   const wasNearTopRef = useRef(false);
   const wasNearBottomRef = useRef(false);
+  const lastAnnouncedBlockIdRef = useRef<string>();
+
+  const unifiedText = useMemo(() => blocks.map((block) => block.text).join("\n"), [blocks]);
+
+  const getBlockStartOffset = (blockIndex: number): number => {
+    let offset = 0;
+
+    for (let index = 0; index < blockIndex; index += 1) {
+      offset += blocks[index].text.length;
+      offset += 1;
+    }
+
+    return offset;
+  };
+
+  const findBlockIndexAtPosition = (position: number): number => {
+    if (blocks.length === 0) {
+      return -1;
+    }
+
+    const clampedPosition = Math.max(0, Math.min(position, unifiedText.length));
+    let cursor = 0;
+
+    for (let index = 0; index < blocks.length; index += 1) {
+      const block = blocks[index];
+      const blockEnd = cursor + block.text.length;
+
+      if (clampedPosition <= blockEnd || index === blocks.length - 1) {
+        return index;
+      }
+
+      cursor = blockEnd + 1;
+    }
+
+    return blocks.length - 1;
+  };
+
+  const findDiff = (previousText: string, nextText: string): UnifiedDiff => {
+    const minLength = Math.min(previousText.length, nextText.length);
+    let start = 0;
+
+    while (start < minLength && previousText[start] === nextText[start]) {
+      start += 1;
+    }
+
+    let previousEnd = previousText.length;
+    let nextEnd = nextText.length;
+
+    while (
+      previousEnd > start &&
+      nextEnd > start &&
+      previousText[previousEnd - 1] === nextText[nextEnd - 1]
+    ) {
+      previousEnd -= 1;
+      nextEnd -= 1;
+    }
+
+    return { start, previousEnd, nextEnd };
+  };
+
+  const emitUnifiedEdit = (
+    nextText: string,
+    emitChange: (block: Block, text: string) => void
+  ): void => {
+    if (nextText === unifiedText || blocks.length === 0) {
+      return;
+    }
+
+    const diff = findDiff(unifiedText, nextText);
+    const blockIndex = findBlockIndexAtPosition(diff.start);
+    if (blockIndex < 0) {
+      return;
+    }
+
+    const block = blocks[blockIndex];
+    const blockStart = getBlockStartOffset(blockIndex);
+
+    const localStart = Math.max(0, Math.min(diff.start - blockStart, block.text.length));
+    const localPreviousEnd = Math.max(
+      localStart,
+      Math.min(diff.previousEnd - blockStart, block.text.length)
+    );
+    const replacement = nextText.slice(diff.start, diff.nextEnd);
+    const nextBlockText =
+      block.text.slice(0, localStart) + replacement + block.text.slice(localPreviousEnd);
+
+    if (nextBlockText !== block.text) {
+      emitChange(block, nextBlockText);
+    }
+  };
+
+  const updateActiveBlock = (position: number): void => {
+    const blockIndex = findBlockIndexAtPosition(position);
+    const nextBlockId = blockIndex >= 0 ? blocks[blockIndex]?.id : undefined;
+
+    if (lastAnnouncedBlockIdRef.current === nextBlockId) {
+      return;
+    }
+
+    lastAnnouncedBlockIdRef.current = nextBlockId;
+    onActiveBlockChange(nextBlockId);
+  };
 
   const handleBlocksScroll = (event: UIEvent<HTMLDivElement>): void => {
     const target = event.currentTarget;
@@ -95,7 +203,7 @@ export function EditorLayout({
         </aside>
 
         <section className="panel">
-          <h2>Blocks</h2>
+          <h2>Editor</h2>
           <p className="meta-row">
             Loaded {loadedBlockCount} / {totalBlocks} blocks
           </p>
@@ -109,23 +217,38 @@ export function EditorLayout({
           </div>
           <div className="blocks" onScroll={handleBlocksScroll}>
             {blocks.length === 0 && <p>Waiting for block data…</p>}
-            {blocks.map((block) => (
-              <label className="block-item" key={block.id}>
-                <span className="meta-row">
-                  {block.id} • order:{block.orderKey} • version:{block.version}
-                </span>
-                <textarea
-                  className="editor-textarea"
-                  value={block.text}
-                  onFocus={() => onActiveBlockChange(block.id)}
-                  onBlur={(event) => {
-                    onActiveBlockChange(undefined);
-                    onBlockCommit(block, event.currentTarget.value);
-                  }}
-                  onChange={(event) => onBlockChange(block, event.target.value)}
-                />
-              </label>
-            ))}
+            {blocks.length > 0 && (
+              <textarea
+                className="editor-textarea unified-editor-textarea"
+                value={unifiedText}
+                onFocus={(event) => updateActiveBlock(event.currentTarget.selectionStart ?? 0)}
+                onClick={(event) => updateActiveBlock(event.currentTarget.selectionStart ?? 0)}
+                onKeyUp={(event) => updateActiveBlock(event.currentTarget.selectionStart ?? 0)}
+                onBlur={(event) => {
+                  lastAnnouncedBlockIdRef.current = undefined;
+                  onActiveBlockChange(undefined);
+                  emitUnifiedEdit(event.currentTarget.value, onBlockCommit);
+                }}
+                onChange={(event) => emitUnifiedEdit(event.target.value, onBlockChange)}
+                onScroll={(event) => {
+                  const target = event.currentTarget;
+                  const nearTop = target.scrollTop <= 80;
+                  const nearBottom =
+                    target.scrollHeight - (target.scrollTop + target.clientHeight) <= 80;
+
+                  if (nearTop && !wasNearTopRef.current) {
+                    onBlocksScrollBoundary("up");
+                  }
+
+                  if (nearBottom && !wasNearBottomRef.current) {
+                    onBlocksScrollBoundary("down");
+                  }
+
+                  wasNearTopRef.current = nearTop;
+                  wasNearBottomRef.current = nearBottom;
+                }}
+              />
+            )}
           </div>
         </section>
 
